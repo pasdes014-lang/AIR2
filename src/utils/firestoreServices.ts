@@ -291,3 +291,63 @@ export const subscribeStockRecords = (uid: string, cb: (docs: any[]) => void) =>
     return () => {};
   }
 };
+
+// ============ ITEM MASTER ============
+export const subscribeItemMaster = (uid: string, cb: (docs: any[]) => void) => {
+  try {
+    const col = collection(db, 'users', uid, 'itemMaster');
+    const unsub = onSnapshot(col, snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      cb(docs);
+    }, (error) => {
+      logger.error('[FirestoreServices] Error subscribing to itemMaster:', error);
+      cb([]);
+    });
+    return unsub;
+  } catch (error) {
+    logger.error('[FirestoreServices] subscribeItemMaster failed:', error);
+    return () => {};
+  }
+};
+
+export const getItemMaster = async (uid: string) => {
+  try {
+    const col = collection(db, 'users', uid, 'itemMaster');
+    const snap = await getDocs(col);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    logger.error('[FirestoreServices] Error getting itemMaster:', error);
+    return [];
+  }
+};
+
+export const addItemMaster = async (uid: string, data: any) => {
+  try {
+    const col = collection(db, 'users', uid, 'itemMaster');
+    const ref = await addDoc(col, { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    return ref.id;
+  } catch (error) {
+    logger.error('[FirestoreServices] Error adding itemMaster:', error);
+    throw error;
+  }
+};
+
+export const updateItemMaster = async (uid: string, docId: string, data: any) => {
+  try {
+    const docRef = doc(db, 'users', uid, 'itemMaster', docId);
+    await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
+  } catch (error) {
+    logger.error('[FirestoreServices] Error updating itemMaster:', error);
+    throw error;
+  }
+};
+
+export const deleteItemMaster = async (uid: string, docId: string) => {
+  try {
+    const docRef = doc(db, 'users', uid, 'itemMaster', docId);
+    await deleteDoc(docRef);
+  } catch (error) {
+    logger.error('[FirestoreServices] Error deleting itemMaster:', error);
+    throw error;
+  }
+};
