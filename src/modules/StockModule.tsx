@@ -4,7 +4,7 @@ import bus from '../utils/eventBus';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { subscribeStockRecords, addStockRecord, updateStockRecord, deleteStockRecord, subscribePurchaseOrders, subscribeVendorIssues, subscribeVendorDepts, subscribeVSIRRecords } from '../utils/firestoreServices';
+import { subscribeStockRecords, addStockRecord, updateStockRecord, deleteStockRecord, subscribePurchaseOrders, subscribeVendorIssues, subscribeVendorDepts, subscribeVSIRRecords, subscribeItemMaster } from '../utils/firestoreServices';
 import { subscribePsirs } from '../utils/psirService';
 
 interface StockRecord {
@@ -437,15 +437,25 @@ const StockModule: React.FC = () => {
         const coll2 = collection(db, 'userData', userUid, 'indentData');
         unsubIndent = onSnapshot(coll2, snap => setIndentState(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
       } catch {}
+      // Use subscribeItemMaster helper with error handling
       try {
-        const coll3 = collection(db, 'userData', userUid, 'itemMasterData');
-        unsubItemMaster = onSnapshot(coll3, snap => {
-          const items = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        unsubItemMaster = subscribeItemMaster(userUid, (items) => {
           console.log('[StockModule] itemMasterData snapshot:', items.length, 'items received', items);
-          setItemMasterState(items);
+          setItemMasterState(items || []);
         });
       } catch (e) {
         console.error('[StockModule] itemMasterData subscription failed:', e);
+        // Fallback: try loading once from Firestore directly
+        try {
+          const coll3 = collection(db, 'userData', userUid, 'itemMasterData');
+          onSnapshot(coll3, snap => {
+            const items = snap.docs.map(d => ({ id: d.id, itemName: d.data().itemName, itemCode: d.data().itemCode }));
+            console.log('[StockModule] fallback itemMasterData snapshot:', items.length, 'items');
+            setItemMasterState(items);
+          }, (err) => console.error('[StockModule] fallback also failed:', err));
+        } catch (fallbackErr) {
+          console.error('[StockModule] fallback subscription also failed:', fallbackErr);
+        }
       }
     } else {
       // clear dependent states when signed out
