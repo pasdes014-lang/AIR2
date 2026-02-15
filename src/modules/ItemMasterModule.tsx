@@ -28,6 +28,8 @@ const ItemMasterModule: React.FC = () => {
   // Migrate existing localStorage item master entries into Firestore on sign-in
   // Subscribe to Firestore for realtime data
   useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    
     const unsub = onAuthStateChanged(auth, (u) => {
       const uid = u ? u.uid : null;
       setUserUid(uid);
@@ -56,34 +58,34 @@ const ItemMasterModule: React.FC = () => {
           } catch (err) {
             console.error('[ItemMasterModule] Migration failed:', err);
           }
+
+          // After migration, subscribe to Firestore
+          try {
+            const col = collection(db, 'userData', uid, 'itemMasterData');
+            unsubscribe = onSnapshot(col, (snap) => {
+              const mapped = snap.docs.map(d => ({
+                id: d.id,
+                itemName: d.data().itemName || '',
+                itemCode: d.data().itemCode || '',
+              } as ItemMasterRecord));
+              setRecords(mapped);
+            });
+          } catch (err) {
+            console.error('[ItemMasterModule] Firestore subscription error:', err);
+          }
         })();
+      } else {
+        // User signed out
+        setRecords([]);
+        if (unsubscribe) unsubscribe();
       }
     });
-    return () => { try { unsub(); } catch {} };
-  }, []);
 
-  // Subscribe to Firestore itemMasterData collection for realtime updates
-  useEffect(() => {
-    let unsub: (() => void) | null = null;
-    if (userUid) {
-      try {
-        const col = collection(db, 'userData', userUid, 'itemMasterData');
-        unsub = onSnapshot(col, (snap) => {
-          const mapped = snap.docs.map(d => ({
-            id: d.id,
-            itemName: d.data().itemName || '',
-            itemCode: d.data().itemCode || '',
-          } as ItemMasterRecord));
-          setRecords(mapped);
-        });
-      } catch (err) {
-        console.error('[ItemMasterModule] Firestore subscription error:', err);
-      }
-    } else {
-      setRecords([]);
-    }
-    return () => { try { if (unsub) unsub(); } catch {} };
-  }, [userUid]);
+    return () => {
+      try { unsub(); } catch {}
+      try { if (unsubscribe) unsubscribe(); } catch {}
+    };
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
