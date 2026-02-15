@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { getItemMaster, subscribeItemMaster, addItemMaster, updateItemMaster, deleteItemMaster } from '../utils/firestoreServices';
@@ -24,13 +24,20 @@ const ItemMasterModule: React.FC = () => {
     itemCode: '',
   });
   const [editIdx, setEditIdx] = useState<number | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   // Subscribe to Firestore item master when authenticated; fall back to localStorage when signed out
   useEffect(() => {
-    let unsub: (() => void) | null = null;
-    const au = onAuthStateChanged(auth, (u) => {
+    const authUnsubscribe = onAuthStateChanged(auth, (u) => {
       const uid = u ? u.uid : null;
       setUserUid(uid);
+
+      // Clean up previous subscription
+      if (unsubscribeRef.current) {
+        try { unsubscribeRef.current(); } catch (e) {}
+        unsubscribeRef.current = null;
+      }
+
       if (!uid) {
         // load from localStorage when logged out
         const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -48,7 +55,7 @@ const ItemMasterModule: React.FC = () => {
 
       // load initial and subscribe
       try {
-        unsub = subscribeItemMaster(uid, (docs) => {
+        unsubscribeRef.current = subscribeItemMaster(uid, (docs: any[]) => {
           setRecords(docs.map(d => ({ id: d.id, itemName: d.itemName, itemCode: d.itemCode })));
         });
       } catch (e) {
@@ -65,8 +72,8 @@ const ItemMasterModule: React.FC = () => {
     });
 
     return () => {
-      try { if (unsub) unsub(); } catch {}
-      try { au(); } catch {}
+      try { if (unsubscribeRef.current) unsubscribeRef.current(); } catch {}
+      try { authUnsubscribe(); } catch {}
     };
   }, []);
 
