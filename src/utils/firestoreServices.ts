@@ -185,18 +185,6 @@ export const deleteVSIRRecord = async (uid: string, docId: string) => {
   }
 };
 
-// ============ ITEM MASTER ============
-export const getItemMaster = async (uid: string) => {
-  try {
-    const col = collection(db, 'users', uid, 'itemMaster');
-    const snap = await getDocs(col);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (error) {
-    logger.error('[FirestoreServices] Error getting itemMaster:', error);
-    return [];
-  }
-};
-
 // ============ PURCHASE DATA ============
 export const getPurchaseData = async (uid: string) => {
   try {
