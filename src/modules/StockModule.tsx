@@ -439,8 +439,14 @@ const StockModule: React.FC = () => {
       } catch {}
       try {
         const coll3 = collection(db, 'userData', userUid, 'itemMasterData');
-        unsubItemMaster = onSnapshot(coll3, snap => setItemMasterState(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
-      } catch {}
+        unsubItemMaster = onSnapshot(coll3, snap => {
+          const items = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+          console.log('[StockModule] itemMasterData snapshot:', items.length, 'items received', items);
+          setItemMasterState(items);
+        });
+      } catch (e) {
+        console.error('[StockModule] itemMasterData subscription failed:', e);
+      }
     } else {
       // clear dependent states when signed out
       setPsirsState([]);
@@ -509,6 +515,7 @@ const StockModule: React.FC = () => {
     const { name, value, type } = e.target;
     if (name === "itemName") {
       const found = itemMasterState.find((item) => item.itemName === value);
+      console.log('[StockModule] itemName selected:', value, 'found item:', found);
       setItemInput((prev) => ({
         ...prev,
         itemName: value,
