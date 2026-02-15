@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import bus from '../utils/eventBus';
 import * as XLSX from 'xlsx';
-import { subscribeFirestoreDocs, replaceFirestoreCollection } from '../utils/firestoreSync';
+import { subscribeFirestoreDocs, replaceFirestoreCollection, getFirestoreDocs } from '../utils/firestoreSync';
 import { getItemMaster } from '../utils/firestoreServices';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -463,6 +463,21 @@ const IndentModule: React.FC<IndentModuleProps> = ({ user }) => {
       };
     })
   );
+
+  // One-shot fetch from Firestore for stock-records (useful to force-refresh)
+  const fetchStockOnce = async () => {
+    try {
+      const docs = await getFirestoreDocs(uid, 'stock-records');
+      setStockRecords(docs || []);
+      console.log('[IndentModule] fetchStockOnce: fetched', docs?.length || 0, 'stock records');
+      // Trigger recompute
+      try { bus.dispatchEvent(new CustomEvent('stock.updated')); } catch (err) { }
+      alert('Fetched stock-records from Firestore (' + (docs?.length || 0) + ')');
+    } catch (err) {
+      console.error('[IndentModule] fetchStockOnce error', err);
+      alert('Failed to fetch stock-records: ' + String(err));
+    }
+  };
 
   // Compute and publish open/closed indent items
   const computeAndPublishIndentItems = (sourceIndents: any[]) => {
@@ -997,6 +1012,7 @@ const IndentModule: React.FC<IndentModuleProps> = ({ user }) => {
                 <input placeholder="Filter (item code or name)" value={debugFilter} onChange={e => setDebugFilter(e.target.value)} style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc', minWidth: 240 }} />
                 <button onClick={() => console.log('[IndentDebugPanel] rows:', debugRows)} style={{ padding: '8px 12px', background: '#ff9800', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Log Rows</button>
                 <button onClick={() => navigator.clipboard?.writeText(JSON.stringify(debugRows, null, 2)).then(()=>alert('Copied to clipboard'))} style={{ padding: '8px 12px', background: '#9c27b0', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Copy JSON</button>
+                <button onClick={fetchStockOnce} style={{ padding: '8px 12px', background: '#607d8b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Refresh Stock (Firestore)</button>
               </div>
 
               <div style={{ maxHeight: 320, overflow: 'auto', borderTop: '1px solid #eee', paddingTop: 8 }}>
