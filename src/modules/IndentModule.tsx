@@ -296,19 +296,32 @@ const IndentModule: React.FC<IndentModuleProps> = ({ user }) => {
 
   // Calculate remaining stock after all allocations
   const getRemainingStock = (itemCode: string) => {
-    const totalStock = getStock(itemCode);
-    let totalAllocatedQty = 0;
-    
+    const totalStock = Number(getStock(itemCode) || 0);
+    const poQty = Number(getPOQuantity(itemCode) || 0);
+
+    // Start from stock + PO (POs increase future availability)
+    let available = totalStock + poQty;
+
+    // Subtract allocations from saved indents (in order)
     indents.forEach((indent, indentIndex) => {
       indent.items.forEach(item => {
         if (item.itemCode === itemCode) {
           const allocated = getAllocatedAvailableForIndent(itemCode, indentIndex, item.qty);
-          totalAllocatedQty += allocated;
+          available -= Number(allocated) || 0;
         }
       });
     });
-    
-    return totalStock - totalAllocatedQty;
+
+    // Also subtract allocations from items already added to the current (unsaved) indent
+    // This treats `newIndent` as the last indent in order and allocates sequentially
+    (newIndent.items || []).forEach(item => {
+      if (item.itemCode === itemCode) {
+        const alloc = Math.min(Math.max(0, available), Number(item.qty) || 0);
+        available -= alloc;
+      }
+    });
+
+    return available;
   };
 
   // Calculate total allocated stock (actual allocated amounts)
