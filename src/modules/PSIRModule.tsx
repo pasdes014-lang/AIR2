@@ -89,8 +89,13 @@ const PSIRModule: React.FC = () => {
   // Subscribe to Firestore PSIRs for the logged-in user and apply realtime updates
   useEffect(() => {
     let unsub: (() => void) | null = null;
-    if (!userUid) return;
+    if (!userUid) {
+      console.debug('[PSIRModule] Skipping PSIR subscription - no userUid');
+      return;
+    }
+    console.debug('[PSIRModule] Setting up PSIR subscription for userId:', userUid);
     unsub = subscribePsirs(userUid, (docs) => {
+      console.debug('[PSIRModule][Firestore] Subscription callback received', docs.length, 'PSIR documents');
       const newPsirs = docs.map(d => ({ ...d })) as any[];
       // normalize items array
       const normalized = newPsirs.map((psir: any) => ({ ...psir, items: Array.isArray(psir.items) ? psir.items : [] }));
@@ -98,10 +103,11 @@ const PSIRModule: React.FC = () => {
       const existingPOs = new Set(normalized.map((psir: any) => psir.poNo).filter(Boolean));
       const existingIndents = new Set(normalized.map((psir: any) => `INDENT::${psir.indentNo}`).filter(id => id !== 'INDENT::'));
       setProcessedPOs(new Set([...existingPOs, ...existingIndents]));
-      console.debug('[PSIRModule][Firestore] Subscribed and applied PSIR docs', normalized.length);
+      console.debug('[PSIRModule][Firestore] Updated local state with', normalized.length, 'PSIRs');
     });
 
     return () => {
+      console.debug('[PSIRModule] Unsubscribing from PSIR subscription');
       if (unsub) unsub();
     };
   }, [userUid]);
@@ -110,9 +116,16 @@ const PSIRModule: React.FC = () => {
   useEffect(() => {
     const loadPurchaseOrders = async () => {
       try {
-        if (!userUid) return;
+        if (!userUid) {
+          console.debug('[PSIRModule] Skipping loadPurchaseOrders: no userUid');
+          return;
+        }
+        console.debug('[PSIRModule] Loading purchase orders for user:', userUid);
         const orders = await getPurchaseOrders(userUid);
+        console.debug('[PSIRModule] getPurchaseOrders returned:', orders);
+        
         if (Array.isArray(orders)) {
+          console.debug('[PSIRModule][Init] Loaded', orders.length, 'purchase orders from Firestore');
           setPurchaseOrders(orders as any as PurchaseOrder[]);
           if (orders.length > 0 && !newPSIR.poNo) {
             const latestOrder: any = orders[orders.length - 1];
@@ -123,7 +136,8 @@ const PSIRModule: React.FC = () => {
               indentNo: latestOrder.indentNo || '',
             }));
           }
-          console.debug('[PSIRModule][Init] Loaded purchaseOrders from Firestore:', orders);
+        } else {
+          console.warn('[PSIRModule][Init] getPurchaseOrders returned non-array:', typeof orders, orders);
         }
       } catch (e) {
         console.error('[PSIRModule][Init] Error loading purchaseOrders from Firestore:', e);
@@ -260,7 +274,13 @@ const PSIRModule: React.FC = () => {
   // Import ALL purchase orders/indents to PSIR
   const importAllPurchaseOrdersToPSIR = () => {
     try {
+      console.info('[PSIRModule] importAllPurchaseOrdersToPSIR called');
+      console.debug('[PSIRModule] purchaseOrders:', purchaseOrders);
+      console.debug('[PSIRModule] psirs:', psirs);
+      console.debug('[PSIRModule] userUid:', userUid);
+      
       if (purchaseOrders.length === 0) {
+        console.warn('[PSIRModule] No purchase orders to import');
         alert('No purchase orders found');
         return;
       }
@@ -268,12 +288,17 @@ const PSIRModule: React.FC = () => {
       let importedCount = 0;
       const newPSIRs: PSIR[] = [];
 
-      purchaseOrders.forEach((order) => {
+      purchaseOrders.forEach((order, orderIdx) => {
         const poNo = String(order.poNo || '').trim();
         const indentNo = String(order.indentNo || '').trim();
         
+        console.debug(`[PSIRModule] Processing order ${orderIdx}:`, { poNo, indentNo, supplierName: order.supplierName });
+        
         // Skip if both PO and Indent are empty
-        if (!poNo && !indentNo) return;
+        if (!poNo && !indentNo) {
+          console.debug(`[PSIRModule] Skipping order ${orderIdx} - both poNo and indentNo are empty`);
+          return;
+        }
 
         // Find matching purchaseData entry to get OA NO
         let oaNoFromPurchase = '';
@@ -454,17 +479,23 @@ const PSIRModule: React.FC = () => {
       });
 
       if (importedCount > 0) {
+        console.info('[PSIRModule] Import complete - imported', importedCount, 'records, saving to Firestore...');
         setPsirs(prev => {
           const updated = [...prev, ...newPSIRs];
-          newPSIRs.forEach(psir => {
+          console.debug('[PSIRModule] Updated local PSIRs state with', newPSIRs.length, 'new records');
+          newPSIRs.forEach((psir, idx) => {
             if (userUid) {
+              console.debug('[PSIRModule] Saving PSIR', idx, 'to Firestore for userId:', userUid);
               (async () => {
                 try {
-                  await addPsir(userUid, psir);
+                  const result = await addPsir(userUid, psir);
+                  console.debug('[PSIRModule] Successfully saved PSIR', idx, 'with id:', result);
                 } catch (e) {
-                  console.error('[PSIRModule] Failed to add PSIR to Firestore', e);
+                  console.error('[PSIRModule] Failed to add PSIR to Firestore', idx, e);
                 }
               })();
+            } else {
+              console.warn('[PSIRModule] Cannot save PSIR - no userUid');
             }
           });
           try { bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: updated } })); } catch (err) {}
@@ -472,6 +503,7 @@ const PSIRModule: React.FC = () => {
         });
         alert(`✅ Successfully imported ${importedCount} purchase orders/indents to PSIR`);
       } else {
+        console.warn('[PSIRModule] No new purchase orders/indents were imported');
         alert('No new purchase orders/indents to import (all are already processed)');
       }
 
@@ -483,7 +515,12 @@ const PSIRModule: React.FC = () => {
 
   // Auto-create PSIR records from ALL purchase orders once they are loaded
   useEffect(() => {
+    console.debug('[PSIRModule] Auto-import check:', { 
+      purchaseOrdersCount: purchaseOrders.length, 
+      psirsCount: psirs.length 
+    });
     if (purchaseOrders.length > 0 && psirs.length === 0) {
+      console.info('[PSIRModule] Auto-import triggered - importing', purchaseOrders.length, 'purchase orders');
       importAllPurchaseOrdersToPSIR();
     }
   }, [purchaseOrders]);
