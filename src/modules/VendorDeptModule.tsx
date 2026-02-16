@@ -299,10 +299,10 @@ const VendorDeptModule: React.FC = () => {
 	});
 
 	// Accept Firestore state variables as props
-	const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
-	const [purchaseData, setPurchaseData] = useState<any[]>([]);
-	const [vsirRecords, setVsirRecords] = useState<any[]>([]);
-	const [psirData, setPsirData] = useState<any[]>([]);
+	const [purchaseOrders] = useState<any[]>([]);
+	const [purchaseData] = useState<any[]>([]);
+	const [vsirRecords] = useState<any[]>([]);
+	const [psirData] = useState<any[]>([]);
 
 	// Get all PO numbers from PurchaseModule state
 	const [purchasePOs, setPurchasePOs] = useState<string[]>([]);
@@ -341,13 +341,11 @@ const VendorDeptModule: React.FC = () => {
 	useEffect(() => {
 		console.log('[VendorDept] Syncing vendorBatchNo from VSIR on mount for all existing orders');
 		setOrders(prevOrders => {
-			let updated = false;
 			const syncedOrders = prevOrders.map(order => {
 				if (!order.vendorBatchNo || !order.vendorBatchNo.trim()) {
 					const vendorBatchNo = getVendorBatchNoFromVSIR(order.materialPurchasePoNo, vsirRecords);
 					if (vendorBatchNo && vendorBatchNo !== order.vendorBatchNo) {
 						console.log(`[VendorDept] ✓ Synced vendorBatchNo for PO ${order.materialPurchasePoNo}: ${vendorBatchNo}`);
-						updated = true;
 						return { ...order, vendorBatchNo };
 					}
 				}
@@ -362,13 +360,11 @@ const VendorDeptModule: React.FC = () => {
 	useEffect(() => {
 		console.log('[VendorDept] Cleaning up debitNoteOrQtyReturned field with GRN-like values');
 		setOrders(prevOrders => {
-			let updated = false;
 			const cleanedOrders = prevOrders.map(order => {
 				const cleanedItems = order.items.map(item => {
 					// If debitNoteOrQtyReturned looks like a GRN number (only digits, longer than 3), clear it
 					if (item.debitNoteOrQtyReturned && /^\d{4,}$/.test(String(item.debitNoteOrQtyReturned).trim())) {
 						console.log(`[VendorDept] ✓ Cleared GRN-like value from debitNoteOrQtyReturned for item ${item.itemCode}: "${item.debitNoteOrQtyReturned}"`);
-						updated = true;
 						return { ...item, debitNoteOrQtyReturned: '' };
 					}
 					return item;
@@ -589,8 +585,8 @@ const VendorDeptModule: React.FC = () => {
 		console.log('[VendorDeptModule] ======================================');
 	}, []);
 
-	const [itemNames, setItemNames] = useState<string[]>([]);
-	const [itemMaster, setItemMaster] = useState<{ itemName: string; itemCode: string }[]>([]);
+	const [itemNames] = useState<string[]>([]);
+	const [itemMaster] = useState<{ itemName: string; itemCode: string }[]>([]);
 	const [editIdx, setEditIdx] = useState<{orderIdx: number, itemIdx: number} | null>(null);
 
 	// Debug panel state
@@ -985,7 +981,6 @@ useEffect(() => {
 					}
 					return record;
 				});
-				setVsirRecords(updatedVsirRecords);
 				console.log('[VendorDeptModule] VSIR records updated');
 				// Dispatch event so VSIR component knows about the update
 				try {

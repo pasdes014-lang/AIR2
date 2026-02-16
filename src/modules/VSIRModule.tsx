@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { auth } from '../firebase';
 import { subscribePsirs } from '../utils/psirService';
 import { subscribeVSIRRecords, addVSIRRecord, updateVSIRRecord, deleteVSIRRecord, subscribeVendorDepts, getItemMaster, getVendorIssues, getPurchaseData } from '../utils/firestoreServices';
 import bus from '../utils/eventBus';
@@ -353,63 +352,6 @@ const VSIRModule: React.FC = () => {
       }
     } catch {}
     // eslint-disable-next-line
-  }, []);
-
-  // Sync on vendorIssueData change
-  useEffect(() => {
-    const syncVendorIssue = () => {
-      try {
-        const vendorIssuesList = vendorIssues || [];
-        if (!vendorIssuesList || vendorIssuesList.length === 0) {
-          console.log('[VSIR-DEBUG] No vendorIssueData to sync');
-          return;
-        }
-        let cur = (Array.isArray(records) && records.length) ? [...records] : [];
-        console.log('[VSIR-DEBUG] syncVendorIssue: loaded', cur.length, 'records from state');
-        let added = false;
-        vendorIssuesList.forEach((issue: any) => {
-          if (!issue?.items) return;
-          issue.items.forEach((it: any) => {
-            const exists = cur.some(
-              r =>
-                (r.poNo || '').toString().trim() === (issue.materialPurchasePoNo || '').toString().trim() &&
-                (r.itemCode || '').toString().trim() === (it.itemCode || '').toString().trim()
-            );
-            if (!exists) {
-              console.log('[VSIR-DEBUG] Adding new record from vendorIssue:', issue.materialPurchasePoNo, it.itemCode);
-              cur.push({
-                id: Date.now() + Math.floor(Math.random() * 10000),
-                receivedDate: issue.date || '',
-                indentNo: '',
-                poNo: issue.materialPurchasePoNo || '',
-                oaNo: issue.oaNo || '',
-                purchaseBatchNo: issue.batchNo || '',
-                vendorBatchNo: '',
-                dcNo: '', // MANUAL ENTRY - don't auto-populate
-                invoiceDcNo: '', // MANUAL ENTRY - don't auto-populate
-                vendorName: issue.vendorName || '',
-                itemName: it.itemName || it.model || '',
-                itemCode: it.itemCode || '',
-                qtyReceived: 0,
-                okQty: 0,
-                reworkQty: 0,
-                rejectQty: 0,
-                grnNo: '',
-                remarks: '',
-              });
-              added = true;
-            }
-          });
-        });
-        if (added) {
-          console.log('[VSIR-DEBUG] syncVendorIssue: added records, calling setRecords with', cur.length, 'total records');
-          setRecords(cur);
-        }
-      } catch {}
-    };
-
-    // No storage event listener needed - data comes from Firestore subscriptions
-    return () => {};
   }, []);
 
   // Fill missing OA/Batch from PSIR/VendorDept (once)
