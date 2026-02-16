@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import bus from '../utils/eventBus';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
-import { addPsir, updatePsir, subscribePsirs } from '../utils/psirService';
+import { addPsir, updatePsir, subscribePsirs, deletePsir } from '../utils/psirService';
 import { getItemMaster, getPurchaseData, getIndentData, getStockRecords, getPurchaseOrders, updatePurchaseData, updatePurchaseOrder } from '../utils/firestoreServices';
 
 interface PSIRItem {
@@ -726,27 +726,47 @@ const PSIRModule: React.FC = () => {
 
   const handleDeleteItem = (psirIdx: number, itemIdx: number) => {
     setPsirs(prevPsirs => {
-      const updated = prevPsirs
-        .map((p, pIdx) => {
-          if (pIdx !== psirIdx) return p;
-          return { ...p, items: p.items.filter((_, idx) => idx !== itemIdx) };
-        })
-        .filter(p => p.items.length > 0);
-      
-      // Update in Firestore
       const target = prevPsirs[psirIdx];
+      if (!target) {
+        console.error('[PSIRModule] Target PSIR not found at index', psirIdx);
+        return prevPsirs;
+      }
+
+      // Create updated PSIR with item removed
+      const updatedTarget = { 
+        ...target, 
+        items: target.items.filter((_, idx) => idx !== itemIdx) 
+      };
+
+      // Update local state
+      const updated = prevPsirs.map((p, pIdx) => {
+        if (pIdx !== psirIdx) return p;
+        return updatedTarget;
+      });
+
+      // Update or delete in Firestore
       if (userUid && (target as any).id) {
         (async () => {
           try {
-            await updatePsir((target as any).id, updated[psirIdx]);
+            if (updatedTarget.items.length === 0) {
+              // Delete entire PSIR if no items remain
+              console.log('[PSIRModule] Deleting PSIR:', (target as any).id);
+              await deletePsir((target as any).id);
+            } else {
+              // Update PSIR with remaining items
+              console.log('[PSIRModule] Updating PSIR with remaining items:', (target as any).id);
+              await updatePsir((target as any).id, updatedTarget);
+            }
           } catch (e) {
-            console.error('[PSIRModule] Failed to update PSIR in Firestore after item delete', e);
+            console.error('[PSIRModule] Failed to update/delete PSIR in Firestore after item delete', e);
           }
         })();
       }
       
-      try { bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: updated } })); } catch (err) {}
-      return updated;
+      // Filter out empty PSIRs from local state
+      const filtered = updated.filter(p => p.items.length > 0);
+      try { bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: filtered } })); } catch (err) {}
+      return filtered;
     });
   };
 
