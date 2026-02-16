@@ -1290,7 +1290,7 @@ useEffect(() => {
 				localStorage.setItem('vendorDeptData', JSON.stringify(newOrders));
 			}
 		}
-	}, [purchasePOs]);
+	}, [purchaseOrders]);
 
 	// Regenerate vendor batch nos for existing orders that don't have them
 	const regenerateVendorBatchNos = () => {
