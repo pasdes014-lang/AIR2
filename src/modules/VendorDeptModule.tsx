@@ -1050,6 +1050,7 @@ useEffect(() => {
 		console.log('[DEBUG][VendorDeptModule] Saving newOrder at idx:', editOrderIdx, newOrder);
 		console.log('[DEBUG][VendorDeptModule] batchNo value:', newOrder.batchNo);
 
+		try {
 			if (vsirRaw) {
 				const vsirRecords = JSON.parse(vsirRaw);
 				console.log('[VendorDeptModule] Syncing vendorBatchNo to VSIR for PO:', orderToSave.materialPurchasePoNo);
