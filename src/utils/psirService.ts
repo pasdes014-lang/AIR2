@@ -31,33 +31,52 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
         // Sort client-side by createdAt descending
         docs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
         
-        // Deduplicate by indentNo and poNo (keep most recent)
-        const seen = new Map<string, any>();
+        // Deduplicate by indentNo only (keep records with BOTH PO No AND Supplier Name)
+        const seenByIndent = new Map<string, any>();
         const dedupLog: string[] = [];
         const origLength = docs.length;
         
         docs.forEach(doc => {
-          const key = `${doc.indentNo || 'MISSING'}-${doc.poNo || 'MISSING'}`;
-          const existingTime = seen.get(key)?.createdAt?.toMillis?.() || 0;
-          const newTime = doc.createdAt?.toMillis?.() || 0;
+          const indentNo = doc.indentNo || 'MISSING';
+          const hasPoNo = !!doc.poNo && doc.poNo.trim() !== '';
+          const hasSupplierName = !!doc.supplierName && doc.supplierName.trim() !== '';
+          const isComplete = hasPoNo && hasSupplierName;
           
-          if (!seen.has(key)) {
-            seen.set(key, doc);
-            dedupLog.push(`✅ Keep: ${key} (id: ${doc.id})`);
-          } else if (newTime > existingTime) {
-            dedupLog.push(`🔄 Replace: ${key} (old id: ${seen.get(key)?.id}, new id: ${doc.id})`);
-            seen.set(key, doc);
+          if (!seenByIndent.has(indentNo)) {
+            seenByIndent.set(indentNo, doc);
+            dedupLog.push(`✅ Keep: Indent ${indentNo} (id: ${doc.id}, complete: ${isComplete})`);
           } else {
-            dedupLog.push(`❌ Skip duplicate: ${key} (id: ${doc.id})`);
+            const existing = seenByIndent.get(indentNo);
+            const existingComplete = (!!existing.poNo && existing.poNo.trim() !== '') && 
+                                      (!!existing.supplierName && existing.supplierName.trim() !== '');
+            
+            if (isComplete && !existingComplete) {
+              // New record is complete, old is not - replace
+              dedupLog.push(`🔄 Replace: Indent ${indentNo} (old id: ${existing.id} - incomplete, new id: ${doc.id} - complete)`);
+              seenByIndent.set(indentNo, doc);
+            } else if (isComplete && existingComplete) {
+              // Both complete - keep most recent
+              const existingTime = existing.createdAt?.toMillis?.() || 0;
+              const newTime = doc.createdAt?.toMillis?.() || 0;
+              if (newTime > existingTime) {
+                dedupLog.push(`🔄 Replace: Indent ${indentNo} (old id: ${existing.id}, new id: ${doc.id} - newer)`);
+                seenByIndent.set(indentNo, doc);
+              } else {
+                dedupLog.push(`❌ Skip: Indent ${indentNo} (id: ${doc.id} - older duplicate)`);
+              }
+            } else {
+              // New is incomplete or both incomplete - skip new
+              dedupLog.push(`❌ Skip: Indent ${indentNo} (id: ${doc.id} - incomplete)`);
+            }
           }
         });
-        docs = Array.from(seen.values());
+        docs = Array.from(seenByIndent.values());
         docs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
         
         const removedCount = origLength - docs.length;
         console.log('[PSIRService.subscribePsirs] 🔔 SNAPSHOT (fallback) - Original:', origLength, 'After dedup:', docs.length, 'Removed:', removedCount);
         dedupLog.forEach(log => console.log('[Dedup]', log));
-        console.log('[PSIRService.subscribePsirs] Final IDs:', docs.map(d => `${d.indentNo}-${d.poNo} (${d.id})`));
+        console.log('[PSIRService.subscribePsirs] Final IDs:', docs.map(d => `${d.indentNo} (PO: ${d.poNo}, Supplier: ${d.supplierName}) - ${d.id}`));
         cb(docs);
       }, (error2) => {
         console.error('[PSIRService] Even fallback query failed:', error2.code, error2.message);
@@ -78,33 +97,52 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
     let docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
     docs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     
-    // Deduplicate by indentNo and poNo (keep most recent)
-    const seen = new Map<string, any>();
+    // Deduplicate by indentNo only (keep records with BOTH PO No AND Supplier Name)
+    const seenByIndent = new Map<string, any>();
     const dedupLog: string[] = [];
     const origLength = docs.length;
     
     docs.forEach(doc => {
-      const key = `${doc.indentNo || 'MISSING'}-${doc.poNo || 'MISSING'}`;
-      const existingTime = seen.get(key)?.createdAt?.toMillis?.() || 0;
-      const newTime = doc.createdAt?.toMillis?.() || 0;
+      const indentNo = doc.indentNo || 'MISSING';
+      const hasPoNo = !!doc.poNo && doc.poNo.trim() !== '';
+      const hasSupplierName = !!doc.supplierName && doc.supplierName.trim() !== '';
+      const isComplete = hasPoNo && hasSupplierName;
       
-      if (!seen.has(key)) {
-        seen.set(key, doc);
-        dedupLog.push(`✅ Keep: ${key} (id: ${doc.id})`);
-      } else if (newTime > existingTime) {
-        dedupLog.push(`🔄 Replace: ${key} (old id: ${seen.get(key)?.id}, new id: ${doc.id})`);
-        seen.set(key, doc);
+      if (!seenByIndent.has(indentNo)) {
+        seenByIndent.set(indentNo, doc);
+        dedupLog.push(`✅ Keep: Indent ${indentNo} (id: ${doc.id}, complete: ${isComplete})`);
       } else {
-        dedupLog.push(`❌ Skip duplicate: ${key} (id: ${doc.id})`);
+        const existing = seenByIndent.get(indentNo);
+        const existingComplete = (!!existing.poNo && existing.poNo.trim() !== '') && 
+                                  (!!existing.supplierName && existing.supplierName.trim() !== '');
+        
+        if (isComplete && !existingComplete) {
+          // New record is complete, old is not - replace
+          dedupLog.push(`🔄 Replace: Indent ${indentNo} (old id: ${existing.id} - incomplete, new id: ${doc.id} - complete)`);
+          seenByIndent.set(indentNo, doc);
+        } else if (isComplete && existingComplete) {
+          // Both complete - keep most recent
+          const existingTime = existing.createdAt?.toMillis?.() || 0;
+          const newTime = doc.createdAt?.toMillis?.() || 0;
+          if (newTime > existingTime) {
+            dedupLog.push(`🔄 Replace: Indent ${indentNo} (old id: ${existing.id}, new id: ${doc.id} - newer)`);
+            seenByIndent.set(indentNo, doc);
+          } else {
+            dedupLog.push(`❌ Skip: Indent ${indentNo} (id: ${doc.id} - older duplicate)`);
+          }
+        } else {
+          // New is incomplete or both incomplete - skip new
+          dedupLog.push(`❌ Skip: Indent ${indentNo} (id: ${doc.id} - incomplete)`);
+        }
       }
     });
-    docs = Array.from(seen.values());
+    docs = Array.from(seenByIndent.values());
     docs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     
     const removedCount = origLength - docs.length;
     console.log('[PSIRService.subscribePsirs] 🔔 SNAPSHOT (index) - Original:', origLength, 'After dedup:', docs.length, 'Removed:', removedCount);
     dedupLog.forEach(log => console.log('[Dedup]', log));
-    console.log('[PSIRService.subscribePsirs] Final IDs:', docs.map(d => `${d.indentNo}-${d.poNo} (${d.id})`));
+    console.log('[PSIRService.subscribePsirs] Final IDs:', docs.map(d => `${d.indentNo} (PO: ${d.poNo}, Supplier: ${d.supplierName}) - ${d.id}`));
     cb(docs);
   }, handleIndexError);
   
