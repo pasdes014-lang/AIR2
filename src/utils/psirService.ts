@@ -33,18 +33,31 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
         
         // Deduplicate by indentNo and poNo (keep most recent)
         const seen = new Map<string, any>();
+        const dedupLog: string[] = [];
+        const origLength = docs.length;
+        
         docs.forEach(doc => {
-          const key = `${doc.indentNo || ''}-${doc.poNo || ''}`;
-          if (!seen.has(key) || (doc.createdAt?.toMillis?.() || 0) > (seen.get(key).createdAt?.toMillis?.() || 0)) {
+          const key = `${doc.indentNo || 'MISSING'}-${doc.poNo || 'MISSING'}`;
+          const existingTime = seen.get(key)?.createdAt?.toMillis?.() || 0;
+          const newTime = doc.createdAt?.toMillis?.() || 0;
+          
+          if (!seen.has(key)) {
             seen.set(key, doc);
+            dedupLog.push(`✅ Keep: ${key} (id: ${doc.id})`);
+          } else if (newTime > existingTime) {
+            dedupLog.push(`🔄 Replace: ${key} (old id: ${seen.get(key)?.id}, new id: ${doc.id})`);
+            seen.set(key, doc);
+          } else {
+            dedupLog.push(`❌ Skip duplicate: ${key} (id: ${doc.id})`);
           }
         });
         docs = Array.from(seen.values());
         docs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
         
-        console.log('[PSIRService.subscribePsirs] 🔔 SNAPSHOT (fallback) -', docs.length, 'PSIRs received (after dedup)');
-        console.log('[PSIRService.subscribePsirs] IDs:', docs.map(d => d.id));
-        console.log('[PSIRService.subscribePsirs] Dedup removed', snap.docs.length - docs.length, 'duplicates');
+        const removedCount = origLength - docs.length;
+        console.log('[PSIRService.subscribePsirs] 🔔 SNAPSHOT (fallback) - Original:', origLength, 'After dedup:', docs.length, 'Removed:', removedCount);
+        dedupLog.forEach(log => console.log('[Dedup]', log));
+        console.log('[PSIRService.subscribePsirs] Final IDs:', docs.map(d => `${d.indentNo}-${d.poNo} (${d.id})`));
         cb(docs);
       }, (error2) => {
         console.error('[PSIRService] Even fallback query failed:', error2.code, error2.message);
@@ -67,18 +80,31 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
     
     // Deduplicate by indentNo and poNo (keep most recent)
     const seen = new Map<string, any>();
+    const dedupLog: string[] = [];
+    const origLength = docs.length;
+    
     docs.forEach(doc => {
-      const key = `${doc.indentNo || ''}-${doc.poNo || ''}`;
-      if (!seen.has(key) || (doc.createdAt?.toMillis?.() || 0) > (seen.get(key).createdAt?.toMillis?.() || 0)) {
+      const key = `${doc.indentNo || 'MISSING'}-${doc.poNo || 'MISSING'}`;
+      const existingTime = seen.get(key)?.createdAt?.toMillis?.() || 0;
+      const newTime = doc.createdAt?.toMillis?.() || 0;
+      
+      if (!seen.has(key)) {
         seen.set(key, doc);
+        dedupLog.push(`✅ Keep: ${key} (id: ${doc.id})`);
+      } else if (newTime > existingTime) {
+        dedupLog.push(`🔄 Replace: ${key} (old id: ${seen.get(key)?.id}, new id: ${doc.id})`);
+        seen.set(key, doc);
+      } else {
+        dedupLog.push(`❌ Skip duplicate: ${key} (id: ${doc.id})`);
       }
     });
     docs = Array.from(seen.values());
     docs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     
-    console.log('[PSIRService.subscribePsirs] 🔔 SNAPSHOT (index) -', docs.length, 'PSIRs received (after dedup)');
-    console.log('[PSIRService.subscribePsirs] IDs:', docs.map(d => d.id));
-    console.log('[PSIRService.subscribePsirs] Dedup removed', snap.docs.length - docs.length, 'duplicates');
+    const removedCount = origLength - docs.length;
+    console.log('[PSIRService.subscribePsirs] 🔔 SNAPSHOT (index) - Original:', origLength, 'After dedup:', docs.length, 'Removed:', removedCount);
+    dedupLog.forEach(log => console.log('[Dedup]', log));
+    console.log('[PSIRService.subscribePsirs] Final IDs:', docs.map(d => `${d.indentNo}-${d.poNo} (${d.id})`));
     cb(docs);
   }, handleIndexError);
   
