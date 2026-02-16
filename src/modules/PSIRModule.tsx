@@ -77,6 +77,9 @@ const PSIRModule: React.FC = () => {
   const [psirDebugOpen, setPsirDebugOpen] = useState<boolean>(false);
   const [psirDebugOutput, setPsirDebugOutput] = useState<string>('');
   const [psirDebugExtra, setPsirDebugExtra] = useState<string>('');
+  // Delete debug state
+  const [deleteDebugOpen, setDeleteDebugOpen] = useState<boolean>(false);
+  const [deleteDebugInfo, setDeleteDebugInfo] = useState<string>('');
 
   // Current authenticated user's UID (if logged in)
   const [userUid, setUserUid] = useState<string | null>(null);
@@ -724,11 +727,82 @@ const PSIRModule: React.FC = () => {
     }));
   };
 
-  const handleDeleteItem = async (psirIdx: number, itemIdx: number) => {
+  // Debug helper for delete operations
+  const generateDeleteDebugInfo = (psirIdx: number, itemIdx: number, status: string, error?: any) => {
     const target = psirs[psirIdx];
+    const timestamp = new Date().toISOString();
+    const debugData = {
+      timestamp,
+      status,
+      userAuthentication: {
+        userUid: userUid || 'NOT LOGGED IN',
+        isAuthenticated: userUid ? 'YES' : 'NO'
+      },
+      indices: {
+        psirIdx,
+        itemIdx,
+        totalPsirs: psirs.length
+      },
+      psirRecord: target ? {
+        id: (target as any).id || 'MISSING ID - THIS IS THE PROBLEM!',
+        receivedDate: target.receivedDate,
+        indentNo: target.indentNo,
+        poNo: target.poNo,
+        supplierName: target.supplierName,
+        itemsCount: target.items?.length || 0
+      } : 'PSIR NOT FOUND AT INDEX',
+      itemToDelete: target && target.items?.[itemIdx] ? {
+        itemName: target.items[itemIdx].itemName,
+        itemCode: target.items[itemIdx].itemCode,
+        qtyReceived: target.items[itemIdx].qtyReceived
+      } : 'ITEM NOT FOUND',
+      operation: {
+        willDelete: target && target.items?.length === 1 ? 'ENTIRE PSIR' : 'ONLY THIS ITEM'
+      },
+      error: error ? {
+        message: error.message,
+        code: (error as any).code,
+        fullError: String(error)
+      } : 'NO ERROR'
+    };
+    
+    const debugString = JSON.stringify(debugData, null, 2);
+    console.error('[DEBUG] Delete Operation Report:\n', debugString);
+    return debugString;
+  };
+
+  const handleDeleteItem = async (psirIdx: number, itemIdx: number) => {
+    console.info('[PSIRModule] handleDeleteItem called:', { psirIdx, itemIdx, totalPsirs: psirs.length });
+    
+    const target = psirs[psirIdx];
+    
+    // Validate PSIR exists
     if (!target) {
+      const debugInfo = generateDeleteDebugInfo(psirIdx, itemIdx, 'FAILED_PSIR_NOT_FOUND');
+      setDeleteDebugInfo(debugInfo);
+      setDeleteDebugOpen(true);
       console.error('[PSIRModule] Target PSIR not found at index', psirIdx);
-      alert('Error: Could not find PSIR record');
+      alert('Error: Could not find PSIR record. Check debug panel.');
+      return;
+    }
+
+    // Validate user is authenticated
+    if (!userUid) {
+      const debugInfo = generateDeleteDebugInfo(psirIdx, itemIdx, 'FAILED_NOT_AUTHENTICATED');
+      setDeleteDebugInfo(debugInfo);
+      setDeleteDebugOpen(true);
+      console.warn('[PSIRModule] Cannot delete: user not authenticated');
+      alert('Error: User not authenticated. Please sign in first.');
+      return;
+    }
+
+    // Validate PSIR has an ID
+    if (!(target as any).id) {
+      const debugInfo = generateDeleteDebugInfo(psirIdx, itemIdx, 'FAILED_NO_PSIR_ID');
+      setDeleteDebugInfo(debugInfo);
+      setDeleteDebugOpen(true);
+      console.error('[PSIRModule] Target PSIR has no ID:', target);
+      alert('Error: PSIR record has no ID. Cannot delete. See debug panel.');
       return;
     }
 
@@ -738,41 +812,51 @@ const PSIRModule: React.FC = () => {
       items: target.items.filter((_, idx) => idx !== itemIdx) 
     };
 
+    const psirId = (target as any).id;
+    const isDeleting = updatedTarget.items.length === 0;
+
     try {
-      // First, persist to Firestore BEFORE updating local state
-      if (userUid && (target as any).id) {
-        if (updatedTarget.items.length === 0) {
-          // Delete entire PSIR if no items remain
-          console.log('[PSIRModule] Deleting PSIR:', (target as any).id);
-          await deletePsir((target as any).id);
-          console.log('[PSIRModule] Delete successful for PSIR:', (target as any).id);
-        } else {
-          // Update PSIR with remaining items
-          console.log('[PSIRModule] Updating PSIR with remaining items:', (target as any).id);
-          await updatePsir((target as any).id, updatedTarget);
-          console.log('[PSIRModule] Update successful for PSIR:', (target as any).id);
-        }
+      console.info('[PSIRModule] Starting delete operation:', {
+        psirId,
+        userUid,
+        itemIdx,
+        isDeleting,
+        remainingItems: updatedTarget.items.length
+      });
+
+      if (isDeleting) {
+        console.log('[PSIRModule] Deleting entire PSIR:', psirId);
+        await deletePsir(psirId);
+        console.log('[PSIRModule] PSIR deleted successfully from Firestore:', psirId);
       } else {
-        console.warn('[PSIRModule] Missing userUid or PSIR ID, cannot persist deletion');
-        alert('Error: User not authenticated or PSIR ID missing');
-        return;
+        console.log('[PSIRModule] Updating PSIR with remaining items:', psirId);
+        await updatePsir(psirId, updatedTarget);
+        console.log('[PSIRModule] PSIR updated successfully in Firestore:', psirId);
       }
 
-      // ONLY update local state AFTER Firestore operation succeeds
-      setPsirs(prev => {
-        const updated = prev.map((p, idx) => {
-          if (idx !== psirIdx) return p;
-          return updatedTarget;
-        });
-
-        // Filter out empty PSIRs from local state
-        const filtered = updated.filter(p => p.items.length > 0);
-        try { bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: filtered } })); } catch (err) {}
-        return filtered;
-      });
+      const successDebugInfo = generateDeleteDebugInfo(psirIdx, itemIdx, 'SUCCESS');
+      setDeleteDebugInfo(successDebugInfo);
+      setDeleteDebugOpen(true);
+      console.info('[PSIRModule] Delete operation complete. Waiting for subscription update...');
     } catch (e) {
-      console.error('[PSIRModule] Failed to delete/update PSIR in Firestore:', e);
-      alert('Error deleting item: ' + String(e));
+      console.error('[PSIRModule] Failed to delete/update PSIR in Firestore:', {
+        error: e,
+        psirId,
+        userUid,
+        errorCode: (e as any)?.code,
+        errorMessage: (e as any)?.message
+      });
+      
+      const errorDebugInfo = generateDeleteDebugInfo(psirIdx, itemIdx, 'FAILED_FIRESTORE_ERROR', e);
+      setDeleteDebugInfo(errorDebugInfo);
+      setDeleteDebugOpen(true);
+      
+      const errorMsg = (e as any)?.message || String(e);
+      if (errorMsg.includes('permission-denied') || errorMsg.includes('PERMISSION_DENIED')) {
+        alert('Permission denied. Check Firestore security rules. See debug panel.');
+      } else {
+        alert('Error deleting item: ' + errorMsg + '. See debug panel for details.');
+      }
     }
   };
 
@@ -1421,6 +1505,107 @@ const PSIRModule: React.FC = () => {
         <div>Processed POs/Indents: {processedPOs.size}</div>
       </div>
 
+      {/* DELETE DEBUG PANEL */}
+      {deleteDebugOpen && (
+        <div style={{ 
+          marginBottom: 16, 
+          padding: 16, 
+          background: '#ffebee', 
+          border: '3px solid #d32f2f', 
+          borderRadius: 8,
+          position: 'relative'
+        }}>
+          <div style={{ 
+            fontWeight: 700, 
+            fontSize: '16px',
+            marginBottom: 12,
+            color: '#d32f2f'
+          }}>
+            🔍 DELETE OPERATION DEBUG INFO
+          </div>
+          
+          <textarea 
+            readOnly 
+            value={deleteDebugInfo}
+            style={{
+              width: '100%',
+              height: '300px',
+              padding: 12,
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              backgroundColor: '#fff',
+              border: '1px solid #d32f2f',
+              borderRadius: 4,
+              marginBottom: 12
+            }}
+          />
+          
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button 
+              onClick={() => {
+                navigator.clipboard.writeText(deleteDebugInfo);
+                alert('Debug info copied to clipboard!');
+              }}
+              style={{
+                padding: '8px 16px',
+                background: '#d32f2f',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontWeight: 600
+              }}
+            >
+              📋 Copy to Clipboard
+            </button>
+            
+            <button 
+              onClick={() => {
+                console.error('[DELETE DEBUG - FULL INFO]:', deleteDebugInfo);
+                alert('Debug info logged to console!');
+              }}
+              style={{
+                padding: '8px 16px',
+                background: '#f57c00',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontWeight: 600
+              }}
+            >
+              🖥️ Log to Console
+            </button>
+            
+            <button 
+              onClick={() => setDeleteDebugOpen(false)}
+              style={{
+                padding: '8px 16px',
+                background: '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontWeight: 600
+              }}
+            >
+              ✕ Close
+            </button>
+          </div>
+          
+          <div style={{ marginTop: 12, fontSize: '12px', color: '#666' }}>
+            <strong>💡 How to read this debug info:</strong>
+            <ul style={{ marginTop: 8, paddingLeft: 20 }}>
+              <li><strong>userUid:</strong> Should show your Firebase user ID, not "NOT LOGGED IN"</li>
+              <li><strong>psirId:</strong> Should be a string ID, not "MISSING ID - THIS IS THE PROBLEM!"</li>
+              <li><strong>status:</strong> Shows what went wrong (SUCCESS, FAILED_*, etc.)</li>
+              <li><strong>totalPsirs:</strong> How many PSIR records exist</li>
+              <li><strong>error:</strong> Firestore error message if delete failed</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* Your existing form inputs and tables remain the same */}
       <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
         <input
@@ -1658,7 +1843,31 @@ const PSIRModule: React.FC = () => {
                   <td>{item.remarks}</td>
                   <td>
                     <button onClick={() => handleEditPSIR(psirIdx)}>Edit</button>
-                    <button onClick={() => handleDeleteItem(psirIdx, itemIdx).catch(err => console.error('Delete failed:', err))}>Delete</button>
+                    <button onClick={async () => {
+                      console.info('[PSIRModule] Delete button clicked:', { psirIdx, itemIdx, psirId: psir.id });
+                      try {
+                        await handleDeleteItem(psirIdx, itemIdx);
+                        console.info('[PSIRModule] Delete completed successfully');
+                      } catch (err) {
+                        console.error('[PSIRModule] Delete button error:', err);
+                        throw err;
+                      }
+                    }}>Delete</button>
+                    <button 
+                      onClick={() => {
+                        console.log('[PSIRModule] PSIR Record Debug:', {
+                          psirIdx,
+                          psirId: psir.id,
+                          psirData: psir,
+                          itemIdx,
+                          itemData: psir.items[itemIdx]
+                        });
+                        alert('Check console for PSIR record details');
+                      }}
+                      style={{ marginLeft: 4, fontSize: '11px' }}
+                    >
+                      Inspect
+                    </button>
                     <button
                       onClick={() => {
                         try {
