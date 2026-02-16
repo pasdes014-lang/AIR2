@@ -481,10 +481,12 @@ const PSIRModule: React.FC = () => {
     }
   };
 
-  // Auto-create PSIR records from ALL purchase orders on component mount
+  // Auto-create PSIR records from ALL purchase orders once they are loaded
   useEffect(() => {
-    importAllPurchaseOrdersToPSIR();
-  }, []);
+    if (purchaseOrders.length > 0 && psirs.length === 0) {
+      importAllPurchaseOrdersToPSIR();
+    }
+  }, [purchaseOrders]);
 
   const handleAddItem = () => {
     if (!itemInput.itemName || !itemInput.itemCode) {
