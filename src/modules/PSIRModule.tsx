@@ -73,6 +73,8 @@ const PSIRModule: React.FC = () => {
   const [stockRecords, setStockRecords] = useState<any[]>([]);
   const [editPSIRIdx, setEditPSIRIdx] = useState<number | null>(null);
   const [processedPOs, setProcessedPOs] = useState<Set<string>>(new Set());
+  // Track deleted PSIRs to prevent auto-reimport (persists across subscription callbacks)
+  const [deletedPOKeys, setDeletedPOKeys] = useState<Set<string>>(new Set());
   // Debug panel state
   const [psirDebugOpen, setPsirDebugOpen] = useState<boolean>(false);
   const [psirDebugOutput, setPsirDebugOutput] = useState<string>('');
@@ -362,6 +364,12 @@ const PSIRModule: React.FC = () => {
           console.debug(`[PSIRModule] Skipping already processed: ${orderKey}`);
           return;
         }
+        
+        // Check if this PO/Indent was explicitly deleted - DO NOT RE-IMPORT IT
+        if (deletedPOKeys.has(orderKey)) {
+          console.debug(`[PSIRModule] Skipping previously deleted: ${orderKey} (will not re-import)`);
+          return;
+        }
 
         // Check if already exists in current PSIRs (find index, we'll update if needed later)
         const existingIdx = psirs.findIndex(psir => {
@@ -564,20 +572,28 @@ const PSIRModule: React.FC = () => {
       purchaseOrdersCount: poCount,
       processedPOsCount: processedCount,
       unprocessedCount: unprocessedCount,
+      deletedPOsCount: deletedPOKeys.size,
       psirsCount: psirs.length 
     });
     
     // Trigger import if:
-    // 1. We have unprocessed purchase orders, OR
-    // 2. We have purchase orders but psirs is empty (first load)
-    if ((unprocessedCount > 0 || poCount > 0) && processedPOs.size === 0) {
-      console.info('[PSIRModule] Auto-import triggered - importing', poCount, 'purchase orders');
+    // 1. We have unprocessed purchase orders (that weren't explicitly deleted), OR
+    // 2. We have purchase orders but psirs is empty (first load) - ONLY if processedPOs is also empty
+    const hasUnprocessedNonDeleted = Array.from(purchaseOrders).some(order => {
+      const poNo = String(order.poNo || '').trim();
+      const indentNo = String(order.indentNo || '').trim();
+      const key = poNo ? poNo : `INDENT::${indentNo}`;
+      return !processedPOs.has(key) && !deletedPOKeys.has(key);
+    });
+    
+    if (hasUnprocessedNonDeleted) {
+      console.info('[PSIRModule] Auto-import triggered - importing unprocessed non-deleted purchase orders');
       importAllPurchaseOrdersToPSIR();
-    } else if (unprocessedCount > 0 && psirs.length > 0) {
-      console.info('[PSIRModule] Auto-import triggered - importing', unprocessedCount, 'unprocessed purchase orders');
+    } else if (poCount > 0 && processedPOs.size === 0 && deletedPOKeys.size === 0) {
+      console.info('[PSIRModule] Auto-import triggered on first load - importing', poCount, 'purchase orders');
       importAllPurchaseOrdersToPSIR();
     }
-  }, [purchaseOrders, processedPOs]);
+  }, [purchaseOrders, processedPOs, deletedPOKeys]);
 
   const handleAddItem = () => {
     if (!itemInput.itemName || !itemInput.itemCode) {
@@ -848,6 +864,13 @@ const PSIRModule: React.FC = () => {
         console.log('   Calling deletePsir with ID:', psirId);
         await deletePsir(psirId);
         console.log('✅ Trace Step 6a: deletePsir completed successfully');
+        
+        // Mark this PO/Indent as deleted to prevent auto-reimport
+        const poNo = String(target.poNo || '').trim();
+        const indentNo = String(target.indentNo || '').trim();
+        const deletedKey = poNo ? poNo : `INDENT::${indentNo}`;
+        setDeletedPOKeys(prev => new Set([...prev, deletedKey]));
+        console.log('🚫 Marked as deleted to prevent re-import:', deletedKey);
       } else {
         console.log('   Calling updatePsir with ID:', psirId);
         await updatePsir(psirId, updatedTarget);
