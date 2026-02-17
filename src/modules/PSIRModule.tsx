@@ -81,6 +81,7 @@ const PSIRModule: React.FC = () => {
   const [deleteDebugInfo, setDeleteDebugInfo] = useState<string>('');
 
   const [userUid, setUserUid] = useState<string | null>(null);
+  const [lastAutoImportTime, setLastAutoImportTime] = useState<number>(0);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -558,6 +559,14 @@ const PSIRModule: React.FC = () => {
       psirsCount: psirs.length 
     });
     
+    // Prevent repeated imports with a cooldown (2 seconds)
+    const now = Date.now();
+    const timeSinceLastImport = now - lastAutoImportTime;
+    if (timeSinceLastImport < 2000) {
+      console.debug('[PSIRModule] Auto-import cooldown active - skipping (last import was', timeSinceLastImport, 'ms ago)');
+      return;
+    }
+    
     const hasUnprocessedNonDeleted = Array.from(ordersToCheck).some(order => {
       const poNo = String(order.poNo || '').trim();
       const indentNo = String(order.indentNo || '').trim();
@@ -567,12 +576,14 @@ const PSIRModule: React.FC = () => {
     
     if (hasUnprocessedNonDeleted) {
       console.info('[PSIRModule] Auto-import triggered - importing unprocessed non-deleted purchase orders');
+      setLastAutoImportTime(now);
       importAllPurchaseOrdersToPSIR();
     } else if (poCount > 0 && processedPOs.size === 0 && deletedPOKeys.size === 0) {
       console.info('[PSIRModule] Auto-import triggered on first load - importing', poCount, 'records from purchase orders/data');
+      setLastAutoImportTime(now);
       importAllPurchaseOrdersToPSIR();
     }
-  }, [purchaseOrders, purchaseData, processedPOs, deletedPOKeys]);
+  }, [purchaseOrders, purchaseData, processedPOs, deletedPOKeys, lastAutoImportTime]);
 
   // NEW: Clean up orphaned PSIR records when their source Purchase Order is deleted
   useEffect(() => {
