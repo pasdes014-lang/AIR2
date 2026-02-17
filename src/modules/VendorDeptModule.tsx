@@ -2286,48 +2286,50 @@ const handleVSIRUpdate = (event?: any) => {
 						<button onClick={() => { setDebugReport([]); setDebugOpen(false); }} style={{ padding: '6px 10px' }}>Close</button>
 					</div>
 				)}
-				<div style={{ overflowX: 'auto', border: '1px solid #ddd', borderRadius: 4, marginBottom: 16 }}>
-					<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+				<div style={{ overflowX: 'auto', marginBottom: 16 }}>
+					<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, background: '#fff', border: '1px solid #ccc' }}>
 						<thead>
-							<tr style={{ background: '#2c3e50', color: '#fff', fontWeight: 'bold' }}>
-								<th style={{ padding: '12px 8px', textAlign: 'center', width: '40px' }}>#</th>
-								<th style={{ padding: '12px 8px', textAlign: 'left', minWidth: '100px' }}>Item</th>
-								<th style={{ padding: '12px 8px', textAlign: 'left', minWidth: '70px' }}>Code</th>
-								<th style={{ padding: '12px 8px', textAlign: 'left', minWidth: '80px' }}>PO No</th>
-								<th style={{ padding: '12px 8px', textAlign: 'left', minWidth: '80px' }}>OA NO</th>
-								<th style={{ padding: '12px 8px', textAlign: 'left', minWidth: '100px' }}>Vendor</th>
-								<th style={{ padding: '12px 8px', textAlign: 'center', minWidth: '60px' }}>PO Qty</th>
-								<th style={{ padding: '12px 8px', textAlign: 'center', minWidth: '60px' }}>Rcvd Qty</th>
-								<th style={{ padding: '12px 8px', textAlign: 'center', minWidth: '50px' }}>OK Qty</th>
-								<th style={{ padding: '12px 8px', textAlign: 'center', minWidth: '60px' }}>Rework Qty</th>
-								<th style={{ padding: '12px 8px', textAlign: 'center', minWidth: '70px' }}>Rejected Qty</th>
-								<th style={{ padding: '12px 8px', textAlign: 'left', minWidth: '80px' }}>GRN No</th>
-								<th style={{ padding: '12px 8px', textAlign: 'left', minWidth: '100px' }}>Stock</th>
-								<th style={{ padding: '12px 8px', textAlign: 'left', minWidth: '80px' }}>Status</th>
-								<th style={{ padding: '12px 8px', textAlign: 'center', minWidth: '70px' }}>Actions</th>
+							<tr style={{ background: '#fff', borderBottom: '2px solid #333', fontWeight: 'bold' }}>
+								<th style={{ padding: '10px 8px', textAlign: 'center', width: '40px', borderRight: '1px solid #ccc' }}>#</th>
+								<th style={{ padding: '10px 8px', textAlign: 'left', minWidth: '100px', borderRight: '1px solid #ccc' }}>Item</th>
+								<th style={{ padding: '10px 8px', textAlign: 'left', minWidth: '70px', borderRight: '1px solid #ccc' }}>Code</th>
+								<th style={{ padding: '10px 8px', textAlign: 'left', minWidth: '80px', borderRight: '1px solid #ccc' }}>PO No</th>
+								<th style={{ padding: '10px 8px', textAlign: 'left', minWidth: '80px', borderRight: '1px solid #ccc' }}>OA NO</th>
+								<th style={{ padding: '10px 8px', textAlign: 'left', minWidth: '100px', borderRight: '1px solid #ccc' }}>Vendor</th>
+								<th style={{ padding: '10px 8px', textAlign: 'center', minWidth: '60px', borderRight: '1px solid #ccc' }}>PO Qty</th>
+								<th style={{ padding: '10px 8px', textAlign: 'center', minWidth: '60px', borderRight: '1px solid #ccc' }}>Rcvd Qty</th>
+								<th style={{ padding: '10px 8px', textAlign: 'center', minWidth: '50px', borderRight: '1px solid #ccc' }}>OK Qty</th>
+								<th style={{ padding: '10px 8px', textAlign: 'center', minWidth: '60px', borderRight: '1px solid #ccc' }}>Rework Qty</th>
+								<th style={{ padding: '10px 8px', textAlign: 'center', minWidth: '70px', borderRight: '1px solid #ccc' }}>Rejected Qty</th>
+								<th style={{ padding: '10px 8px', textAlign: 'left', minWidth: '80px', borderRight: '1px solid #ccc' }}>GRN No</th>
+								<th style={{ padding: '10px 8px', textAlign: 'center', minWidth: '80px', borderRight: '1px solid #ccc' }}>Stock</th>
+								<th style={{ padding: '10px 8px', textAlign: 'left', minWidth: '80px', borderRight: '1px solid #ccc' }}>Status</th>
+								<th style={{ padding: '10px 8px', textAlign: 'center', minWidth: '70px' }}>Actions</th>
 							</tr>
 						</thead>
 						<tbody>
 							{orders.map((order, idx) => {
 								if (order.items.length === 0) {
 									return (
-										<tr key={idx} style={{ background: '#f9f9f9', borderBottom: '1px solid #e0e0e0' }}>
-											<td style={{ padding: '12px 8px', textAlign: 'center' }}>—</td>
-											<td style={{ padding: '12px 8px' }}>—</td>
-											<td style={{ padding: '12px 8px' }}>—</td>
-											<td style={{ padding: '12px 8px' }}>{order.materialPurchasePoNo}</td>
-											<td style={{ padding: '12px 8px' }}>{order.oaNo}</td>
-											<td style={{ padding: '12px 8px' }}>{order.vendorName}</td>
-											<td colSpan={7} style={{ padding: '12px 8px', textAlign: 'center', color: '#888' }}>(No items)</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center', display: 'flex', gap: 4, justifyContent: 'center' }}>
-												<button onClick={() => handleEditOrder(idx)} style={{ background: '#1976d2', color: '#fff', border: 'none', borderRadius: 3, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>Edit</button>
-												<button onClick={() => handleDeleteOrder(idx)} style={{ background: '#e53935', color: '#fff', border: 'none', borderRadius: 3, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>Del</button>
+										<tr key={idx} style={{ background: '#fff', borderBottom: '1px solid #ccc' }}>
+											<td style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #ccc' }}>—</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>—</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>—</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{order.materialPurchasePoNo}</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{order.oaNo}</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{order.vendorName}</td>
+											<td colSpan={7} style={{ padding: '10px 8px', textAlign: 'center', color: '#888', borderRight: '1px solid #ccc' }}>(No items)</td>
+											<td style={{ padding: '10px 8px', textAlign: 'center', display: 'flex', gap: 4, justifyContent: 'center' }}>
+												<button onClick={() => handleEditOrder(idx)} style={{ background: '#1976d2', color: '#fff', border: 'none', borderRadius: 2, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>Edit</button>
+												<button onClick={() => handleDeleteOrder(idx)} style={{ background: '#e53935', color: '#fff', border: 'none', borderRadius: 2, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>Del</button>
 											</td>
 										</tr>
 									);
 								}
 								return order.items.map((item, itemIdx) => {
 									const stockVal = getClosingStock(item.itemCode, item.itemName);
+									const stockNum = Number(stockVal);
+									const stockDisplay = stockNum < 0 ? stockNum : (stockNum > 0 ? `+${stockNum}` : '0');
 									const indentStatus = (() => {
 										try {
 											const purchaseStatus = getIndentStatusFromPurchase(order.materialPurchasePoNo, item.itemCode, item.materialIssueNo || '');
@@ -2338,45 +2340,38 @@ const handleVSIRUpdate = (event?: any) => {
 									})();
 									
 									return (
-										<tr key={`${idx}-${itemIdx}`} style={{ borderBottom: '1px solid #e0e0e0', background: itemIdx % 2 === 0 ? '#fff' : '#fafafa' }}>
-											<td style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 'bold', color: '#555' }}>{idx + 1}</td>
-											<td style={{ padding: '12px 8px' }}>{item.itemName || '—'}</td>
-											<td style={{ padding: '12px 8px', fontFamily: 'monospace', fontWeight: '500' }}>{item.itemCode || '—'}</td>
-											<td style={{ padding: '12px 8px', fontWeight: '500' }}>{order.materialPurchasePoNo}</td>
-											<td style={{ padding: '12px 8px' }}>{order.oaNo}</td>
-											<td style={{ padding: '12px 8px' }}>{order.vendorName}</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center' }}>{item.qty || '—'}</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center' }}>{item.receivedQty || '—'}</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center', color: '#4caf50', fontWeight: 'bold' }}>{item.okQty || '—'}</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center', color: '#ff9800', fontWeight: 'bold' }}>{item.reworkQty || '—'}</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center', color: '#e53935', fontWeight: 'bold' }}>{item.rejectedQty || '—'}</td>
-											<td style={{ padding: '12px 8px' }}>{item.grnNo || '—'}</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center' }}>
+										<tr key={`${idx}-${itemIdx}`} style={{ borderBottom: '1px solid #ccc', background: '#fff' }}>
+											<td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 'bold', color: '#555', borderRight: '1px solid #ccc' }}>{idx + 1}</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{item.itemName || '—'}</td>
+											<td style={{ padding: '10px 8px', fontFamily: 'monospace', fontWeight: '500', borderRight: '1px solid #ccc' }}>{item.itemCode || '—'}</td>
+											<td style={{ padding: '10px 8px', fontWeight: '500', borderRight: '1px solid #ccc' }}>{order.materialPurchasePoNo}</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{order.oaNo}</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{order.vendorName}</td>
+											<td style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #ccc' }}>{item.qty || '—'}</td>
+											<td style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #ccc' }}>{item.receivedQty || '—'}</td>
+											<td style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #ccc' }}>{item.okQty || '—'}</td>
+											<td style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #ccc' }}>{item.reworkQty || '—'}</td>
+											<td style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #ccc' }}>{item.rejectedQty || '—'}</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{item.grnNo || '—'}</td>
+											<td style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #ccc' }}>
 												<span style={{ 
-													background: Number(stockVal) > 0 ? '#c8e6c9' : '#ffcdd2', 
-													padding: '3px 8px', 
-													borderRadius: '3px', 
+													background: stockNum < 0 ? '#e53935' : '#c8e6c9', 
+													color: stockNum < 0 ? '#fff' : '#333',
+													padding: '4px 8px', 
+													borderRadius: '2px', 
 													fontSize: '11px',
-													fontWeight: 'bold'
+													fontWeight: 'bold',
+													display: 'inline-block'
 												}}>
-													{stockVal || '—'}
+													{stockDisplay}
 												</span>
 											</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center' }}>
-												<span style={{
-													background: indentStatus === 'CLOSED' ? '#4caf50' : indentStatus === 'PARTIAL' ? '#ff9800' : '#2196f3',
-													color: '#fff',
-													padding: '3px 8px',
-													borderRadius: '3px',
-													fontSize: '11px',
-													fontWeight: 'bold'
-												}}>
-													{indentStatus}
-												</span>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc', background: '#fffacd' }}>
+												{indentStatus}
 											</td>
-											<td style={{ padding: '12px 8px', textAlign: 'center', display: 'flex', gap: 4, justifyContent: 'center' }}>
-												<button onClick={() => handleEditOrder(idx)} style={{ background: '#1976d2', color: '#fff', border: 'none', borderRadius: 3, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>Edit</button>
-												<button onClick={() => handleDeleteItem(idx, itemIdx)} style={{ background: '#e53935', color: '#fff', border: 'none', borderRadius: 3, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>Del</button>
+											<td style={{ padding: '10px 8px', textAlign: 'center', display: 'flex', gap: 4, justifyContent: 'center' }}>
+												<button onClick={() => handleEditOrder(idx)} style={{ background: '#1976d2', color: '#fff', border: 'none', borderRadius: 2, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>Edit</button>
+												<button onClick={() => handleDeleteItem(idx, itemIdx)} style={{ background: '#e53935', color: '#fff', border: 'none', borderRadius: 2, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>Del</button>
 											</td>
 										</tr>
 									);
