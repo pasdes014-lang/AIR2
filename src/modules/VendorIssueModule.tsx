@@ -1009,28 +1009,33 @@ const VendorIssueModule: React.FC = () => {
                       type="button"
                       onClick={(e) => {
                         e.preventDefault();
-                        // Delete the entire issue (not just an item)
-                        setIssues(prevIssues => {
-                          const before = prevIssues;
-                          const updated = prevIssues.filter((_, issIdx) => issIdx !== idx);
+                        const toDelete = issues[idx];
+                        if (!toDelete) {
+                          console.error('[VendorIssueModule] No issue found to delete at index', idx);
+                          return;
+                        }
 
-                          // Persist change: if authenticated, delete from Firestore; otherwise update localStorage
-                          setTimeout(async () => {
-                            try {
-                              const original = before[idx];
-                              if (userUid && original) {
-                                if (original.id) await deleteVendorIssue(userUid, original.id);
-                              } else {
-                                try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
-                              }
-                            } catch (err) {
-                              console.error('[VendorIssueModule] Failed to delete from Firestore:', err);
-                              try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
-                            }
-                          }, 0);
-
-                          return updated;
-                        });
+                        console.log('[VendorIssueModule] Deleting issue:', toDelete);
+                        
+                        // Delete from Firestore immediately
+                        if (userUid && toDelete?.id) {
+                          deleteVendorIssue(userUid, toDelete.id)
+                            .then(() => {
+                              console.log('[VendorIssueModule] Successfully deleted from Firestore:', toDelete.id);
+                              // Remove from local state after successful Firestore delete
+                              setIssues(prev => prev.filter((_, i) => i !== idx));
+                            })
+                            .catch((err) => {
+                              console.error('[VendorIssueModule] Failed to delete from Firestore:', err, 'Issue ID:', toDelete.id);
+                            });
+                        } else {
+                          // No userUid, just remove from state and localStorage
+                          setIssues(prev => {
+                            const updated = prev.filter((_, i) => i !== idx);
+                            try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
+                            return updated;
+                          });
+                        }
                       }}
                       style={{ background: '#e53935', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 12px', cursor: 'pointer' }}
                     >

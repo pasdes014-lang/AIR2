@@ -910,11 +910,28 @@ const VSIRModule: React.FC = () => {
                 </td>
                 <td style={{ padding: '10px 8px', textAlign: 'center' }}>
                   <button
-                    onClick={async () => {
+                    onClick={() => {
                       const toDelete = records[idx];
-                      setRecords(prev => prev.filter((_, i) => i !== idx));
+                      if (!toDelete) {
+                        console.error('[VSIR] No record found to delete at index', idx);
+                        return;
+                      }
+
+                      console.log('[VSIR] Deleting record:', toDelete);
+
                       if (userUid && toDelete && toDelete.id) {
-                        try { await deleteVSIRRecord(userUid, String(toDelete.id)); } catch (e) { console.error('[VSIR] deleteVSIRRecord failed', e); }
+                        deleteVSIRRecord(userUid, String(toDelete.id))
+                          .then(() => {
+                            console.log('[VSIR] Successfully deleted from Firestore:', toDelete.id);
+                            // Remove from local state after successful Firestore delete
+                            setRecords(prev => prev.filter((_, i) => i !== idx));
+                          })
+                          .catch((e) => {
+                            console.error('[VSIR] deleteVSIRRecord failed:', e, 'Record ID:', toDelete.id);
+                          });
+                      } else {
+                        // No userUid, just remove from state
+                        setRecords(prev => prev.filter((_, i) => i !== idx));
                       }
                     }}
                     style={{
