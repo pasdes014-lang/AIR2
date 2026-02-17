@@ -312,7 +312,9 @@ const VSIRModule: React.FC = () => {
 
   const getOrderItems = (order: any) => {
     if (!order || typeof order !== 'object') return [];
-    // common field names
+    // If the order itself looks like a single item object, treat it as a one-item list
+    if (looksLikeItem(order)) return [order];
+    // common field names for arrays of items
     const itemKeys = ['items', 'materials', 'products', 'lines', 'orderItems', 'itemsList'];
     for (const k of itemKeys) {
       if (Array.isArray(order[k]) && order[k].length > 0) return order[k];
