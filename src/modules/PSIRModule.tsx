@@ -81,7 +81,6 @@ const PSIRModule: React.FC = () => {
   const [deleteDebugInfo, setDeleteDebugInfo] = useState<string>('');
 
   const [userUid, setUserUid] = useState<string | null>(null);
-  const initialImportDone = useRef<boolean>(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -307,7 +306,7 @@ const PSIRModule: React.FC = () => {
 
   const importAllPurchaseOrdersToPSIR = () => {
     try {
-      console.info('[PSIRModule] importAllPurchaseOrdersToPSIR called');
+      console.info('[PSIRModule] 🔵 MANUAL IMPORT TRIGGERED - User clicked Import button');
       console.debug('[PSIRModule] purchaseOrders:', purchaseOrders);
       console.debug('[PSIRModule] purchaseData:', purchaseData);
       console.debug('[PSIRModule] psirs:', psirs);
@@ -542,31 +541,11 @@ const PSIRModule: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    // ONLY trigger auto-import once when we have both user AND data
-    if (!userUid) {
-      console.debug('[PSIRModule] Auto-import: Waiting for userUid');
-      initialImportDone.current = false; // Reset if user changes
-      return;
-    }
-
-    if (initialImportDone.current) {
-      console.debug('[PSIRModule] Auto-import: Already done initial import');
-      return;
-    }
-
-    const ordersToCheck = purchaseOrders.length > 0 ? purchaseOrders : purchaseData;
-    const poCount = ordersToCheck.length;
-    
-    if (poCount === 0) {
-      console.debug('[PSIRModule] Auto-import: No purchase orders or data available yet');
-      return; // Wait for data to load
-    }
-
-    console.info('[PSIRModule] Auto-import: Initializing - importing', poCount, 'records');
-    initialImportDone.current = true;
-    importAllPurchaseOrdersToPSIR();
-  }, [userUid, purchaseOrders.length, purchaseData.length]);
+  // DISABLED: Auto-import functionality removed
+  // Users should now click "Import All Purchase Orders to PSIR" button manually
+  // useEffect(() => {
+  //   // Auto-import logic was here but disabled to allow manual-only imports
+  // }, [userUid, purchaseOrders.length, purchaseData.length]);
 
   // NEW: Clean up orphaned PSIR records when their source Purchase Order is deleted
   useEffect(() => {
