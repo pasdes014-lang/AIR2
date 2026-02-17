@@ -419,16 +419,16 @@ const IndentModule: React.FC<IndentModuleProps> = ({ user }) => {
       return;
     }
 
-    // VALIDATION: Check stock availability against Stock Module closing stock
+    // LOG: Stock analysis for informational purposes (no blocking)
     let insufficientStockItems: Array<{ model: string; itemCode: string; requested: number; available: number }> = [];
     
-    console.log('[IndentModule] Stock validation started. Total stock records available:', stockRecords?.length || 0);
+    console.log('[IndentModule] Stock analysis started. Total stock records available:', stockRecords?.length || 0);
     
     newIndent.items.forEach(item => {
       const totalStock = getStock(item.itemCode);
       const requestedQty = Number(item.qty) || 0;
       
-      console.log(`[IndentModule] Validating ${item.model} (${item.itemCode}): Requested=${requestedQty}, Available=${totalStock}, Match=${requestedQty > totalStock ? 'INSUFFICIENT' : 'OK'}`);
+      console.log(`[IndentModule] Analyzing ${item.model} (${item.itemCode}): Requested=${requestedQty}, Available=${totalStock}, Status=${requestedQty > totalStock ? 'INSUFFICIENT' : 'OK'}`);
       
       if (requestedQty > totalStock) {
         insufficientStockItems.push({
@@ -440,15 +440,15 @@ const IndentModule: React.FC<IndentModuleProps> = ({ user }) => {
       }
     });
 
-    console.log('[IndentModule] Validation complete. Insufficient items:', insufficientStockItems);
+    console.log('[IndentModule] Analysis complete. Items with insufficient stock:', insufficientStockItems);
 
+    // Show warning but allow proceeding
     if (insufficientStockItems.length > 0) {
       const itemsList = insufficientStockItems
         .map(i => `${i.model} (${i.itemCode}): Requested ${i.requested} but only ${i.available} available`)
         .join('\n');
       
-      alert(`⚠️ INSUFFICIENT STOCK DETECTED:\n\n${itemsList}\n\nPlease update quantities in Stock Module first.`);
-      return;
+      console.warn(`⚠️ INSUFFICIENT STOCK DETECTED:\n\n${itemsList}`);
     }
 
     const indentNo = getNextIndentNo();
