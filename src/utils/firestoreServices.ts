@@ -223,6 +223,19 @@ export const deleteVSIRRecord = async (uid: string, docId: string) => {
 };
 
 // ============ PURCHASE DATA ============
+export const subscribePurchaseData = (uid: string, cb: (docs: any[]) => void) => {
+  const col = collection(db, 'users', uid, 'purchaseData');
+  const q = query(col, orderBy('createdAt', 'desc'));
+  const unsub = onSnapshot(q, snap => {
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    cb(docs);
+  }, (error) => {
+    logger.error('[FirestoreServices] Error subscribing to purchaseData:', error);
+    cb([]);
+  });
+  return unsub;
+};
+
 export const getPurchaseData = async (uid: string) => {
   try {
     const col = collection(db, 'users', uid, 'purchaseData');

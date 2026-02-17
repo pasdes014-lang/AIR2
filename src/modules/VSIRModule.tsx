@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { subscribePsirs } from '../utils/psirService';
-import { subscribeVSIRRecords, addVSIRRecord, updateVSIRRecord, deleteVSIRRecord, subscribeVendorDepts, getItemMaster, getVendorIssues, getPurchaseData } from '../utils/firestoreServices';
+import { subscribeVSIRRecords, addVSIRRecord, updateVSIRRecord, deleteVSIRRecord, subscribeVendorDepts, getItemMaster, getVendorIssues, subscribePurchaseData } from '../utils/firestoreServices';
 import bus from '../utils/eventBus';
 
 interface VSRIRecord {
@@ -108,6 +108,12 @@ const VSIRModule: React.FC = () => {
           setPsirData(docs || []);
         });
 
+        // subscribe to purchaseData in real-time (for auto-import)
+        const unsubPurchaseData = subscribePurchaseData(uid, (docs) => {
+          console.debug('[VSIR] Purchase data updated:', docs.length, 'records');
+          setPurchaseData(docs || []);
+        });
+
         // load one-time master collections
         (async () => {
           try {
@@ -115,7 +121,6 @@ const VSIRModule: React.FC = () => {
             setItemMaster((items || []) as any[]);
             setItemNames((items || []).map((i: any) => i.itemName).filter(Boolean));
           } catch (e) { console.error('[VSIR] getItemMaster failed', e); }
-          try { const p = await getPurchaseData(uid); setPurchaseData(p || []); } catch (e) { console.error('[VSIR] getPurchaseData failed', e); }
           try { const vi = await getVendorIssues(uid); setVendorIssues(vi || []); } catch (e) { console.error('[VSIR] getVendorIssues failed', e); }
         })();
 
@@ -124,6 +129,7 @@ const VSIRModule: React.FC = () => {
           try { if (unsubVSIR) unsubVSIR(); } catch {}
           try { if (unsubVendorDepts) unsubVendorDepts(); } catch {}
           try { if (unsubPsirs) unsubPsirs(); } catch {}
+          try { if (unsubPurchaseData) unsubPurchaseData(); } catch {}
         };
       });
 
