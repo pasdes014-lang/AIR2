@@ -289,80 +289,43 @@ const VSIRModule: React.FC = () => {
   }, [itemInput.poNo]);
 
   // Auto-import from purchaseData (Firebase only - NO localStorage)
-  useEffect(() => {
+  // Reusable import routine so manual and automatic can share the same logic
+  const runImport = async (providedSource?: any[]) => {
     if (!userUid) {
-      console.log('[VSIR] Auto-import skipped: no userUid');
+      console.log('[VSIR] Manual import skipped: no userUid');
       return;
     }
 
-    // Try to use purchaseOrders first, fall back to purchaseData
-    const sourceData = (Array.isArray(purchaseOrders) && purchaseOrders.length > 0) ? purchaseOrders : purchaseData;
+    const sourceData = providedSource ?? ((Array.isArray(purchaseOrders) && purchaseOrders.length > 0) ? purchaseOrders : purchaseData);
 
-    if (!Array.isArray(sourceData)) {
-      console.log('[VSIR] Auto-import skipped: source data is not an array', typeof sourceData);
+    if (!Array.isArray(sourceData) || sourceData.length === 0) {
+      console.log('[VSIR] Manual import skipped: no source data available');
       return;
     }
 
-    if (sourceData.length === 0) {
-      console.log('[VSIR] Auto-import skipped: both purchaseOrders and purchaseData are empty');
-      return;
-    }
-
-    console.log('[VSIR] ========== AUTO-IMPORT STARTING ==========');
+    console.log('[VSIR] ========== RUN IMPORT ==========');
     console.log('[VSIR] Using source:', Array.isArray(purchaseOrders) && purchaseOrders.length > 0 ? 'purchaseOrders' : 'purchaseData');
     console.log('[VSIR] userUid:', userUid);
     console.log('[VSIR] Current VSIR records:', records.length);
     console.log('[VSIR] Source data entries:', sourceData.length);
-    console.log('[VSIR] Source data sample:', sourceData[0]);
 
     try {
-      // Check which POs already have VSIR records
-      const existingPOs = new Set(records.map(r => r.poNo));
-      console.log('[VSIR] Existing POs:', Array.from(existingPOs));
-
+      const existingPOs = new Set(records.map(r => String(r.poNo).trim()));
       let importCount = 0;
-      sourceData.forEach((order: any, orderIdx: number) => {
+
+      for (let orderIdx = 0; orderIdx < sourceData.length; orderIdx++) {
+        const order: any = sourceData[orderIdx];
         const poNo = order.poNo || order.materialPurchasePoNo;
-        console.log(`[VSIR] Processing order ${orderIdx}:`, {
-          poNo,
-          hasItems: Array.isArray(order.items),
-          itemsCount: order.items?.length || 0,
-          alreadyExists: existingPOs.has(poNo)
-        });
+        console.log(`[VSIR] Processing order ${orderIdx}: poNo=${poNo}`);
+        if (!poNo || existingPOs.has(String(poNo).trim())) { console.log('[VSIR]  skipping existing or invalid PO:', poNo); continue; }
+        if (!Array.isArray(order.items) || order.items.length === 0) { console.log('[VSIR]  skipping: no items'); continue; }
 
-        if (!poNo) {
-          console.log('[VSIR]   Skipping: no poNo');
-          return;
-        }
-        if (existingPOs.has(poNo)) {
-          console.log('[VSIR]   Skipping: PO already has VSIR records');
-          return;
-        }
-        if (!Array.isArray(order.items)) {
-          console.log('[VSIR]   Skipping: items is not an array', typeof order.items);
-          return;
-        }
-        if (order.items.length === 0) {
-          console.log('[VSIR]   Skipping: no items in order');
-          return;
-        }
+        const vendorDeptMatch = vendorDeptOrders.find((v: any) => (v.materialPurchasePoNo || '').toString().trim() === poNo.toString().trim());
+        const oaNo = vendorDeptMatch?.oaNo || '';
+        const batchNo = vendorDeptMatch?.batchNo || '';
 
-        // Get matching VendorDept order for OA and Batch info
-        let oaNo = '';
-        let batchNo = '';
-        const vendorDeptMatch = vendorDeptOrders.find((v: any) => v.materialPurchasePoNo === poNo);
-        if (vendorDeptMatch) {
-          oaNo = vendorDeptMatch.oaNo || '';
-          batchNo = vendorDeptMatch.batchNo || '';
-          console.log('[VSIR]   Found matching VendorDept:', { oaNo, batchNo });
-        } else {
-          console.log('[VSIR]   No matching VendorDept order');
-        }
-
-        // Create VSIR record for each item in the purchase order
-        order.items.forEach((item: any, itemIdx: number) => {
-          console.log(`[VSIR]     Processing item ${itemIdx}:`, { itemName: item.itemName, itemCode: item.itemCode, qty: item.qty });
-
+        for (let itemIdx = 0; itemIdx < order.items.length; itemIdx++) {
+          const item = order.items[itemIdx];
           const newRecord: VSRIRecord = {
             id: Date.now() + Math.floor(Math.random() * 10000),
             receivedDate: '',
@@ -384,22 +347,25 @@ const VSIRModule: React.FC = () => {
             remarks: '',
           };
 
-          // Save to Firebase
-          addVSIRRecord(userUid, newRecord)
-            .then(() => {
-              importCount++;
-              console.log('[VSIR]       ✅ Saved to Firebase');
-            })
-            .catch((error) => {
-              console.error('[VSIR]       ❌ Error saving:', error);
-            });
-        });
-      });
-      console.log('[VSIR] Auto-import complete. Records to be imported:', importCount);
-      console.log('[VSIR] ==========================================');
+          try {
+            await addVSIRRecord(userUid, newRecord);
+            importCount++;
+            console.log('[VSIR]   ✅ imported', poNo, newRecord.itemCode || newRecord.itemName);
+          } catch (err) {
+            console.error('[VSIR]   ❌ failed to import', poNo, err);
+          }
+        }
+      }
+
+      console.log('[VSIR] Import complete. total imported:', importCount);
     } catch (e) {
-      console.error('[VSIR] Error in auto-import:', e);
+      console.error('[VSIR] Error running import:', e);
     }
+  };
+
+  // Automatic run when data or auth changes
+  useEffect(() => {
+    runImport();
   }, [purchaseOrders, purchaseData, vendorDeptOrders, records, userUid]);
 
   // Fill missing OA/Batch from PSIR/VendorDept (once)
