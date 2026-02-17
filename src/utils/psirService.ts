@@ -46,15 +46,23 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
           seenByIndent.get(indentNo)!.push(doc);
         });
         
-        // Second pass: deduplicate within each group
+        // Second pass: deduplicate within each group AND filter incomplete records
         const deduped: any[] = [];
         seenByIndent.forEach((groupDocs, indentNo) => {
           if (groupDocs.length === 1) {
-            // Single record - always keep, even if incomplete
-            deduped.push(groupDocs[0]);
-            dedupLog.push(`✅ Keep: Indent ${indentNo} (id: ${groupDocs[0].id}) - only record`);
+            // Single record - only keep if COMPLETE (has both PO No and Supplier Name)
+            const doc = groupDocs[0];
+            const isComplete = (!!doc.poNo && doc.poNo.trim() !== '') && 
+                              (!!doc.supplierName && doc.supplierName.trim() !== '');
+            
+            if (isComplete) {
+              deduped.push(doc);
+              dedupLog.push(`✅ Keep: Indent ${indentNo} (id: ${doc.id}) - complete record`);
+            } else {
+              dedupLog.push(`❌ Skip: Indent ${indentNo} (id: ${doc.id}) - incomplete (missing PO No or Supplier Name)`);
+            }
           } else {
-            // Multiple records - keep complete, skip incomplete
+            // Multiple records - keep only complete records, skip incomplete
             const completeRecords = groupDocs.filter(doc => 
               (!!doc.poNo && doc.poNo.trim() !== '') && 
               (!!doc.supplierName && doc.supplierName.trim() !== '')
@@ -74,14 +82,9 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
                 }
               });
             } else {
-              // All incomplete - keep most recent
-              groupDocs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-              const kept = groupDocs[0];
-              deduped.push(kept);
-              dedupLog.push(`✅ Keep: Indent ${indentNo} (id: ${kept.id}) - most recent (all incomplete)`);
-              
-              groupDocs.slice(1).forEach(doc => {
-                dedupLog.push(`❌ Remove: Indent ${indentNo} (id: ${doc.id}) - older incomplete duplicate`);
+              // All incomplete - skip all of them
+              groupDocs.forEach(doc => {
+                dedupLog.push(`❌ Skip: Indent ${indentNo} (id: ${doc.id}) - all records incomplete (missing PO No or Supplier Name)`);
               });
             }
           }
@@ -129,15 +132,23 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
       seenByIndent.get(indentNo)!.push(doc);
     });
     
-    // Second pass: deduplicate within each group
+    // Second pass: deduplicate within each group AND filter incomplete records
     const deduped: any[] = [];
     seenByIndent.forEach((groupDocs, indentNo) => {
       if (groupDocs.length === 1) {
-        // Single record - always keep, even if incomplete
-        deduped.push(groupDocs[0]);
-        dedupLog.push(`✅ Keep: Indent ${indentNo} (id: ${groupDocs[0].id}) - only record`);
+        // Single record - only keep if COMPLETE (has both PO No and Supplier Name)
+        const doc = groupDocs[0];
+        const isComplete = (!!doc.poNo && doc.poNo.trim() !== '') && 
+                          (!!doc.supplierName && doc.supplierName.trim() !== '');
+        
+        if (isComplete) {
+          deduped.push(doc);
+          dedupLog.push(`✅ Keep: Indent ${indentNo} (id: ${doc.id}) - complete record`);
+        } else {
+          dedupLog.push(`❌ Skip: Indent ${indentNo} (id: ${doc.id}) - incomplete (missing PO No or Supplier Name)`);
+        }
       } else {
-        // Multiple records - keep complete, skip incomplete
+        // Multiple records - keep only complete records, skip incomplete
         const completeRecords = groupDocs.filter(doc => 
           (!!doc.poNo && doc.poNo.trim() !== '') && 
           (!!doc.supplierName && doc.supplierName.trim() !== '')
@@ -157,14 +168,9 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
             }
           });
         } else {
-          // All incomplete - keep most recent
-          groupDocs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-          const kept = groupDocs[0];
-          deduped.push(kept);
-          dedupLog.push(`✅ Keep: Indent ${indentNo} (id: ${kept.id}) - most recent (all incomplete)`);
-          
-          groupDocs.slice(1).forEach(doc => {
-            dedupLog.push(`❌ Remove: Indent ${indentNo} (id: ${doc.id}) - older incomplete duplicate`);
+          // All incomplete - skip all of them
+          groupDocs.forEach(doc => {
+            dedupLog.push(`❌ Skip: Indent ${indentNo} (id: ${doc.id}) - all records incomplete (missing PO No or Supplier Name)`);
           });
         }
       }
