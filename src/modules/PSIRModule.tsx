@@ -73,17 +73,13 @@ const PSIRModule: React.FC = () => {
   const [stockRecords, setStockRecords] = useState<any[]>([]);
   const [editPSIRIdx, setEditPSIRIdx] = useState<number | null>(null);
   const [processedPOs, setProcessedPOs] = useState<Set<string>>(new Set());
-  // Track deleted PSIRs to prevent auto-reimport (persists across subscription callbacks)
   const [deletedPOKeys, setDeletedPOKeys] = useState<Set<string>>(new Set());
-  // Debug panel state
   const [psirDebugOpen, setPsirDebugOpen] = useState<boolean>(false);
   const [psirDebugOutput, setPsirDebugOutput] = useState<string>('');
   const [psirDebugExtra, setPsirDebugExtra] = useState<string>('');
-  // Delete debug state
   const [deleteDebugOpen, setDeleteDebugOpen] = useState<boolean>(false);
   const [deleteDebugInfo, setDeleteDebugInfo] = useState<string>('');
 
-  // Current authenticated user's UID (if logged in)
   const [userUid, setUserUid] = useState<string | null>(null);
 
   useEffect(() => {
@@ -95,7 +91,6 @@ const PSIRModule: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Subscribe to Firestore PSIRs for the logged-in user and apply realtime updates
   useEffect(() => {
     let unsub: (() => void) | null = null;
     if (!userUid) {
@@ -110,7 +105,6 @@ const PSIRModule: React.FC = () => {
       console.log('📋 Document IDs:', docs.map(d => d.id));
       
       const newPsirs = docs.map(d => ({ ...d })) as any[];
-      // normalize items array
       const normalized = newPsirs.map((psir: any) => ({ ...psir, items: Array.isArray(psir.items) ? psir.items : [] }));
       
       console.log('✅ Normalized PSIR data - count:', normalized.length);
@@ -132,7 +126,6 @@ const PSIRModule: React.FC = () => {
     };
   }, [userUid]);
 
-  // Load purchase orders from Firestore
   useEffect(() => {
     const loadPurchaseOrders = async () => {
       try {
@@ -172,16 +165,19 @@ const PSIRModule: React.FC = () => {
     loadPurchaseOrders();
   }, [userUid]);
 
-  // Enhanced auto-fill from Purchase Order when PO No changes
   useEffect(() => {
     if (!newPSIR.poNo) return;
-    if (purchaseOrders.length === 0) {
-      console.debug('[PSIRModule][AutoFill] No purchaseOrders available');
+    
+    // Use purchaseOrders if available, fallback to purchaseData for auto-fill
+    const ordersToSearch = purchaseOrders.length > 0 ? purchaseOrders : purchaseData;
+    
+    if (ordersToSearch.length === 0) {
+      console.debug('[PSIRModule][AutoFill] No purchaseOrders or purchaseData available');
       return;
     }
     
     try {
-      const matchingPO = purchaseOrders.find(po => po.poNo === newPSIR.poNo);
+      const matchingPO = ordersToSearch.find(po => po.poNo === newPSIR.poNo);
       
       if (matchingPO) {
         setNewPSIR(prev => ({ 
@@ -191,7 +187,6 @@ const PSIRModule: React.FC = () => {
           supplierName: matchingPO.supplierName || prev.supplierName
         }));
         
-        // Auto-fill items if available
         if (matchingPO.items && matchingPO.items.length > 0) {
           const firstItem = matchingPO.items[0] as any;
           setItemInput(prev => ({
@@ -200,7 +195,6 @@ const PSIRModule: React.FC = () => {
             itemCode: firstItem.itemCode || firstItem.Code || prev.itemCode,
           }));
         } else {
-          // Support flat / single-item PO shapes where item fields are top-level on the PO
           const poAny = matchingPO as any;
           const topName = poAny.itemName || poAny.Item || poAny.model || '';
           const topCode = poAny.itemCode || poAny.Code || poAny.CodeNo || '';
@@ -213,7 +207,6 @@ const PSIRModule: React.FC = () => {
           }
         }
         
-        // If PO record doesn't provide supplierName, try to find it from purchaseData
         if (!matchingPO.supplierName && purchaseData.length > 0) {
           const found = purchaseData.find((p: any) => String(p.poNo || '').trim() === String(matchingPO.poNo || '').trim() || String(p.indentNo || '').trim() === String(matchingPO.indentNo || '').trim());
           if (found && (found.supplierName || found.supplier)) {
@@ -231,7 +224,6 @@ const PSIRModule: React.FC = () => {
     }
   }, [newPSIR.poNo, purchaseOrders, purchaseData]);
 
-  // Auto-fill Item Code when Item Name is selected
   useEffect(() => {
     if (itemInput.itemName && itemMaster.length > 0) {
       const matchedItem = itemMaster.find(item => item.itemName === itemInput.itemName);
@@ -244,7 +236,6 @@ const PSIRModule: React.FC = () => {
     }
   }, [itemInput.itemName, itemMaster]);
 
-  // Auto-generate batch number when invoice number is entered
   useEffect(() => {
     if (newPSIR.invoiceNo && !newPSIR.batchNo) {
       const nextBatchNo = getNextBatchNo();
@@ -255,7 +246,6 @@ const PSIRModule: React.FC = () => {
     }
   }, [newPSIR.invoiceNo, psirs]);
 
-  // Load initial data from Firestore
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -314,36 +304,39 @@ const PSIRModule: React.FC = () => {
     }
   }, [userUid]);
 
-  // Import ALL purchase orders/indents to PSIR
   const importAllPurchaseOrdersToPSIR = () => {
     try {
       console.info('[PSIRModule] importAllPurchaseOrdersToPSIR called');
       console.debug('[PSIRModule] purchaseOrders:', purchaseOrders);
+      console.debug('[PSIRModule] purchaseData:', purchaseData);
       console.debug('[PSIRModule] psirs:', psirs);
       console.debug('[PSIRModule] userUid:', userUid);
       
-      if (purchaseOrders.length === 0) {
-        console.warn('[PSIRModule] No purchase orders to import');
-        alert('No purchase orders found');
+      // Use purchaseOrders if available, fallback to purchaseData
+      const ordersToImport = purchaseOrders.length > 0 ? purchaseOrders : purchaseData;
+      
+      if (ordersToImport.length === 0) {
+        console.warn('[PSIRModule] No purchase orders or purchase data to import');
+        alert('No purchase orders or purchase data found');
         return;
       }
+      
+      console.info('[PSIRModule] Using', purchaseOrders.length > 0 ? 'purchaseOrders' : 'purchaseData', '(' + ordersToImport.length + ' records)');
 
       let importedCount = 0;
       const newPSIRs: PSIR[] = [];
 
-      purchaseOrders.forEach((order, orderIdx) => {
+      ordersToImport.forEach((order, orderIdx) => {
         const poNo = String(order.poNo || '').trim();
         const indentNo = String(order.indentNo || '').trim();
         
         console.debug(`[PSIRModule] Processing order ${orderIdx}:`, { poNo, indentNo, supplierName: order.supplierName });
         
-        // Skip if both PO and Indent are empty
         if (!poNo && !indentNo) {
           console.debug(`[PSIRModule] Skipping order ${orderIdx} - both poNo and indentNo are empty`);
           return;
         }
 
-        // Find matching purchaseData entry to get OA NO
         let oaNoFromPurchase = '';
         if (Array.isArray(purchaseData)) {
           const purchaseMatch = purchaseData.find((p: any) => {
@@ -356,29 +349,24 @@ const PSIRModule: React.FC = () => {
           }
         }
         
-        // Create unique identifier for this order
         const orderKey = poNo ? poNo : `INDENT::${indentNo}`;
         
-        // Check if already processed
         if (processedPOs.has(orderKey)) {
           console.debug(`[PSIRModule] Skipping already processed: ${orderKey}`);
           return;
         }
         
-        // Check if this PO/Indent was explicitly deleted - DO NOT RE-IMPORT IT
         if (deletedPOKeys.has(orderKey)) {
           console.debug(`[PSIRModule] Skipping previously deleted: ${orderKey} (will not re-import)`);
           return;
         }
 
-        // Check if already exists in current PSIRs (find index, we'll update if needed later)
         const existingIdx = psirs.findIndex(psir => {
           const psirPo = String(psir.poNo || '').trim();
           const psirIndent = String(psir.indentNo || '').trim();
           return (poNo && psirPo === poNo) || (indentNo && psirIndent === indentNo);
         });
 
-        // Extract items from purchase order
         let itemsFromPO: PSIRItem[] = [];
         
         if (Array.isArray(order.items) && order.items.length > 0) {
@@ -387,7 +375,6 @@ const PSIRModule: React.FC = () => {
             return ({
               itemName: it.itemName || it.Item || it.model || '',
               itemCode: code,
-              // Do NOT auto-fill qtyReceived on import; require manual entry
               qtyReceived: 0,
               okQty: 0,
               rejectQty: 0,
@@ -397,7 +384,6 @@ const PSIRModule: React.FC = () => {
             });
           });
         } else {
-          // Try to extract from flat structure
           const orderAny = order as any;
           const topName = orderAny.itemName || orderAny.Item || orderAny.model || '';
           const topCode = orderAny.itemCode || orderAny.Code || orderAny.CodeNo || '';
@@ -406,7 +392,6 @@ const PSIRModule: React.FC = () => {
             itemsFromPO = [{
               itemName: topName,
               itemCode: topCode,
-              // Do NOT auto-fill qtyReceived on import; require manual entry
               qtyReceived: 0,
               okQty: 0,
               rejectQty: 0,
@@ -415,7 +400,6 @@ const PSIRModule: React.FC = () => {
               poQty: getPOQtyFor(poNo, indentNo, topCode),
             }];
           } else {
-            // Fallback to purchaseData lookup
             try {
               const matched = Array.isArray(purchaseData) ? purchaseData.filter((p: any) => {
                 const pPo = String(p.poNo || '').trim();
@@ -430,7 +414,6 @@ const PSIRModule: React.FC = () => {
                   return ({
                     itemName: p.itemName || p.Item || p.model || '',
                     itemCode: code,
-                    // Do NOT auto-fill qtyReceived on import; require manual entry
                     qtyReceived: 0,
                     okQty: 0,
                     rejectQty: 0,
@@ -439,7 +422,6 @@ const PSIRModule: React.FC = () => {
                     poQty: getPOQtyFor(poNo, indentNo, code),
                   });
                 });
-                // if supplier is not available on the order, prefer the matched purchaseData supplier
                 if (supplierFromMatched) {
                   order.supplierName = order.supplierName || supplierFromMatched;
                 }
@@ -468,7 +450,6 @@ const PSIRModule: React.FC = () => {
           }
         }
 
-        // If an existing PSIR record is present, update its supplier/items if they are empty
         if (existingIdx !== -1) {
           const existing = psirs[existingIdx];
           let updated = false;
@@ -508,7 +489,6 @@ const PSIRModule: React.FC = () => {
             console.debug(`[PSIRModule] PSIR already exists and has data for: ${orderKey}`);
           }
         } else {
-          // Create new PSIR record
           const newPSIRRecord: PSIR = {
             receivedDate: new Date().toISOString().slice(0, 10),
             indentNo: indentNo,
@@ -522,7 +502,6 @@ const PSIRModule: React.FC = () => {
 
           newPSIRs.push(newPSIRRecord);
           importedCount++;
-          // Add to processed set
           setProcessedPOs(prev => new Set([...prev, orderKey]));
         }
       });
@@ -562,24 +541,24 @@ const PSIRModule: React.FC = () => {
     }
   };
 
-  // Auto-create PSIR records from ALL purchase orders once they are loaded
   useEffect(() => {
-    const poCount = purchaseOrders.length;
+    // Use purchaseOrders if available, fallback to purchaseData
+    const ordersToCheck = purchaseOrders.length > 0 ? purchaseOrders : purchaseData;
+    const poCount = ordersToCheck.length;
     const processedCount = processedPOs.size;
     const unprocessedCount = poCount - processedCount;
     
     console.debug('[PSIRModule] Auto-import check:', { 
-      purchaseOrdersCount: poCount,
+      purchaseOrdersCount: purchaseOrders.length,
+      purchaseDataCount: purchaseData.length,
+      ordersToCheckCount: poCount,
       processedPOsCount: processedCount,
       unprocessedCount: unprocessedCount,
       deletedPOsCount: deletedPOKeys.size,
       psirsCount: psirs.length 
     });
     
-    // Trigger import if:
-    // 1. We have unprocessed purchase orders (that weren't explicitly deleted), OR
-    // 2. We have purchase orders but psirs is empty (first load) - ONLY if processedPOs is also empty
-    const hasUnprocessedNonDeleted = Array.from(purchaseOrders).some(order => {
+    const hasUnprocessedNonDeleted = Array.from(ordersToCheck).some(order => {
       const poNo = String(order.poNo || '').trim();
       const indentNo = String(order.indentNo || '').trim();
       const key = poNo ? poNo : `INDENT::${indentNo}`;
@@ -590,10 +569,68 @@ const PSIRModule: React.FC = () => {
       console.info('[PSIRModule] Auto-import triggered - importing unprocessed non-deleted purchase orders');
       importAllPurchaseOrdersToPSIR();
     } else if (poCount > 0 && processedPOs.size === 0 && deletedPOKeys.size === 0) {
-      console.info('[PSIRModule] Auto-import triggered on first load - importing', poCount, 'purchase orders');
+      console.info('[PSIRModule] Auto-import triggered on first load - importing', poCount, 'records from purchase orders/data');
       importAllPurchaseOrdersToPSIR();
     }
-  }, [purchaseOrders, processedPOs, deletedPOKeys]);
+  }, [purchaseOrders, purchaseData, processedPOs, deletedPOKeys]);
+
+  // NEW: Clean up orphaned PSIR records when their source Purchase Order is deleted
+  useEffect(() => {
+    const ordersToCheck = purchaseOrders.length > 0 ? purchaseOrders : purchaseData;
+    if (!userUid || psirs.length === 0 || ordersToCheck.length === 0) return;
+    
+    console.debug('[PSIRModule] Checking for orphaned PSIR records...');
+    
+    const existingPOKeys = new Set<string>();
+    ordersToCheck.forEach(order => {
+      const poNo = String(order.poNo || '').trim();
+      const indentNo = String(order.indentNo || '').trim();
+      if (poNo) existingPOKeys.add(poNo);
+      if (indentNo) existingPOKeys.add(`INDENT::${indentNo}`);
+    });
+    
+    const orphanedPSIRs: string[] = [];
+    psirs.forEach(psir => {
+      const poNo = String(psir.poNo || '').trim();
+      const indentNo = String(psir.indentNo || '').trim();
+      const key = poNo ? poNo : `INDENT::${indentNo}`;
+      
+      if (!existingPOKeys.has(key) && !existingPOKeys.has(poNo) && !existingPOKeys.has(`INDENT::${indentNo}`)) {
+        if ((psir as any).id) {
+          orphanedPSIRs.push((psir as any).id);
+          console.log('[PSIRModule] Found orphaned PSIR:', { id: (psir as any).id, poNo, indentNo, key });
+        }
+      }
+    });
+    
+    if (orphanedPSIRs.length > 0) {
+      console.info(`[PSIRModule] Deleting ${orphanedPSIRs.length} orphaned PSIR records...`);
+      (async () => {
+        try {
+          await Promise.all(orphanedPSIRs.map(id => deletePsir(id)));
+          console.info('[PSIRModule] Successfully deleted orphaned PSIR records');
+          
+          setPsirs(prevPsirs => prevPsirs.filter(p => !(p as any).id || !orphanedPSIRs.includes((p as any).id)));
+          
+          setProcessedPOs(prev => {
+            const updated = new Set(prev);
+            psirs.forEach(psir => {
+              if (orphanedPSIRs.includes((psir as any).id)) {
+                const poNo = String(psir.poNo || '').trim();
+                const indentNo = String(psir.indentNo || '').trim();
+                const key = poNo ? poNo : `INDENT::${indentNo}`;
+                updated.delete(key);
+              }
+            });
+            return updated;
+          });
+          
+        } catch (err) {
+          console.error('[PSIRModule] Error deleting orphaned PSIR records:', err);
+        }
+      })();
+    }
+  }, [userUid, psirs, purchaseOrders, purchaseData]);
 
   const handleAddItem = () => {
     if (!itemInput.itemName || !itemInput.itemCode) {
@@ -622,9 +659,7 @@ const PSIRModule: React.FC = () => {
     setEditItemIdx(null);
     try {
       bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { draftItem: addedItem } }));
-    } catch (err) {
-      // ignore
-    }
+    } catch (err) {}
   };
 
   const handleEditItem = (idx: number) => {
@@ -664,7 +699,6 @@ const PSIRModule: React.FC = () => {
       return;
     }
     
-    // Ensure batchNo is set before saving (synchronous, don't rely on useEffect timing)
     let psirToSave = { ...newPSIR };
     if (!psirToSave.batchNo || psirToSave.batchNo.trim() === '') {
       console.log('[PSIR] handleAddPSIR - batchNo is empty, generating');
@@ -675,11 +709,9 @@ const PSIRModule: React.FC = () => {
     const normalizedItems = psirToSave.items.map(it => ({ ...it, poQty: getPOQtyFor(psirToSave.poNo, psirToSave.indentNo, it.itemCode) }));
 
     if (userUid) {
-      // Persist to Firestore; subscription will update local state when write completes
       (async () => {
         try {
           await addPsir(userUid, { ...psirToSave, items: normalizedItems });
-          // processedPOs will be updated from onSnapshot data
         } catch (e) {
           console.error('[PSIRModule] Failed to add PSIR to Firestore', e);
           alert('Error saving to Firestore: ' + String(e));
@@ -711,7 +743,6 @@ const PSIRModule: React.FC = () => {
       return;
     }
     
-    // Ensure batchNo is set before saving (synchronous, don't rely on useEffect timing)
     let psirToSave = { ...newPSIR };
     if (!psirToSave.batchNo || psirToSave.batchNo.trim() === '') {
       console.log('[PSIR] handleUpdatePSIR - batchNo is empty, generating');
@@ -728,14 +759,12 @@ const PSIRModule: React.FC = () => {
       (async () => {
         try {
           await updatePsir(docId, { ...psirToSave, items: psirToSave.items.map(it => ({ ...it, poQty: getPOQtyFor(psirToSave.poNo, psirToSave.indentNo, it.itemCode) })) });
-          // onSnapshot will update local state
         } catch (e) {
           console.error('[PSIRModule] Failed to update PSIR in Firestore', e);
           alert('Error updating in Firestore: ' + String(e));
         }
       })();
     } else {
-      // Fallback for unauthenticated users: update local state only
       setPsirs(updatedLocal);
       try { bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: updatedLocal } })); } catch (err) {}
     }
@@ -754,7 +783,6 @@ const PSIRModule: React.FC = () => {
     }));
   };
 
-  // Debug helper for delete operations
   const generateDeleteDebugInfo = (psirIdx: number, itemIdx: number, status: string, error?: any) => {
     const target = psirs[psirIdx];
     const timestamp = new Date().toISOString();
@@ -805,7 +833,6 @@ const PSIRModule: React.FC = () => {
     
     const target = psirs[psirIdx];
     
-    // Validate PSIR exists
     if (!target) {
       console.log('❌ Trace Step 2: PSIR not found at index', psirIdx);
       const debugInfo = generateDeleteDebugInfo(psirIdx, itemIdx, 'FAILED_PSIR_NOT_FOUND');
@@ -818,7 +845,6 @@ const PSIRModule: React.FC = () => {
     }
     console.log('✅ Trace Step 2: PSIR found at index', psirIdx);
 
-    // Validate user is authenticated
     if (!userUid) {
       console.log('❌ Trace Step 3: User not authenticated');
       const debugInfo = generateDeleteDebugInfo(psirIdx, itemIdx, 'FAILED_NOT_AUTHENTICATED');
@@ -831,7 +857,6 @@ const PSIRModule: React.FC = () => {
     }
     console.log('✅ Trace Step 3: User authenticated -', userUid);
 
-    // Validate PSIR has an ID
     const psirId = (target as any).id;
     if (!psirId) {
       console.log('❌ Trace Step 4: PSIR has no ID');
@@ -845,7 +870,6 @@ const PSIRModule: React.FC = () => {
     }
     console.log('✅ Trace Step 4: PSIR ID exists -', psirId);
 
-    // Create updated PSIR with item removed
     console.log('📍 Trace Step 5: Creating updated PSIR object');
     const updatedTarget = { 
       ...target, 
@@ -865,7 +889,6 @@ const PSIRModule: React.FC = () => {
         await deletePsir(psirId);
         console.log('✅ Trace Step 6a: deletePsir completed successfully');
         
-        // Mark this PO/Indent as deleted to prevent auto-reimport
         const poNo = String(target.poNo || '').trim();
         const indentNo = String(target.indentNo || '').trim();
         const deletedKey = poNo ? poNo : `INDENT::${indentNo}`;
@@ -878,7 +901,6 @@ const PSIRModule: React.FC = () => {
       }
 
       console.log('📍 Trace Step 6c: Immediately updating local state (DON\'T WAIT FOR SUBSCRIPTION)');
-      // IMMEDIATELY update UI - don't wait for subscription callback
       setPsirs(prevPsirs => {
         const updated = prevPsirs.map((p, idx) => {
           if (idx !== psirIdx) return p;
@@ -918,7 +940,6 @@ const PSIRModule: React.FC = () => {
     }
   };
 
-  // Debug helpers
   const formatJSON = (v: any) => {
     try { return JSON.stringify(v, null, 2); } catch { return String(v); }
   };
@@ -947,7 +968,6 @@ const PSIRModule: React.FC = () => {
     }
   };
 
-  // Compute purchase actuals per stock record (PSIR OK - Vendor Issued)
   const computePurchaseActuals = () => {
     try {
       const okTotalsByItemName: Record<string, number> = {};
@@ -956,7 +976,6 @@ const PSIRModule: React.FC = () => {
           if (Array.isArray(psir.items)) {
             psir.items.forEach((it: any) => {
               const name = String(it.itemName || '').trim();
-              // Prefer okQty; if missing/zero, use qtyReceived as fallback
               const okRaw = (it.okQty === undefined || it.okQty === null) ? 0 : Number(it.okQty || 0);
               const qtyReceivedRaw = (it.qtyReceived === undefined || it.qtyReceived === null) ? 0 : Number(it.qtyReceived || 0);
               const ok = okRaw > 0 ? okRaw : qtyReceivedRaw;
@@ -994,17 +1013,14 @@ const PSIRModule: React.FC = () => {
     }
   };
 
-  // Helper: generate next batch number in format YY/B[number]
   const getNextBatchNo = (): string => {
     const currentYear = new Date().getFullYear();
-    const yearSuffix = String(currentYear).slice(-2); // Get last 2 digits (e.g., "25" for 2025)
+    const yearSuffix = String(currentYear).slice(-2);
     
-    // Find all batch numbers from existing PSIRs
     const batchNumbers = psirs
       .map(psir => psir.batchNo)
       .filter(batchNo => batchNo && batchNo.includes('P'))
       .map(batchNo => {
-        // Extract number from format like "25/P1"
         const match = batchNo.match(/P(\d+)/);
         return match ? parseInt(match[1], 10) : 0;
       })
@@ -1016,13 +1032,10 @@ const PSIRModule: React.FC = () => {
     return `${yearSuffix}/P${nextNumber}`;
   };
 
-  // Helper: get PO Qty for a PSIR item by matching purchaseData entries
   const getPOQtyFor = (poNo: string | undefined, indentNo: string | undefined, itemCode: string | undefined): number => {
     try {
-      // Use state-based purchaseData and purchaseOrders instead of localStorage
       const arrA = Array.isArray(purchaseData) ? purchaseData : [];
       const arrB = Array.isArray(purchaseOrders) ? purchaseOrders : [];
-      // Merge purchaseData (arrA) and purchaseOrders (arrB) deterministically
       const mergeKey = (e: any) => `${String(e.poNo||'').trim().toUpperCase()}|${String(e.indentNo||'').trim().toUpperCase()}|${String(e.itemCode||e.Code||e.Item||'').trim().toUpperCase()}`;
       const mergedMap = new Map<string, any>();
       if (Array.isArray(arrB)) arrB.forEach((e: any) => mergedMap.set(mergeKey(e), e));
@@ -1035,11 +1048,8 @@ const PSIRModule: React.FC = () => {
       const targetIndent = norm(indentNo);
 
       const extractQty = (e: any) => Number(e.purchaseQty ?? e.poQty ?? e.qty ?? e.originalIndentQty ?? 0) || 0;
-
-      // Simplified version using state-based data
       const candidateCodes = (e: any) => [e.itemCode, e.Code, e.CodeNo, e.Item].map((c: any) => norm(c));
 
-      // 1) Exact match: poNo + itemCode
       const byPoAndCode = arr.find((e: any) => {
         if (!targetPo) return false;
         if (norm(e.poNo) !== targetPo) return false;
@@ -1048,7 +1058,6 @@ const PSIRModule: React.FC = () => {
       });
       if (byPoAndCode) return extractQty(byPoAndCode);
 
-      // 2) Fallback: indentNo + itemCode
       const byIndentAndCode = arr.find((e: any) => {
         if (norm(e.indentNo) !== targetIndent) return false;
         const codes = candidateCodes(e);
@@ -1056,7 +1065,6 @@ const PSIRModule: React.FC = () => {
       });
       if (byIndentAndCode) return extractQty(byIndentAndCode);
 
-      // 3) Last resort: just itemCode lookup
       const byCode = arr.find((e: any) => {
         const codes = candidateCodes(e);
         return codes.includes(targetCode);
@@ -1069,15 +1077,12 @@ const PSIRModule: React.FC = () => {
     }
   };
 
-  // Debug helper: return detailed matching info for PO Qty lookup
   const getPOQtyMatchDetails = (poNo: string | undefined, indentNo: string | undefined, itemCode: string | undefined) => {
     const details: any = { poNo, indentNo, itemCode, tried: [], matched: false, matchedSource: null, matchedEntry: null, qty: 0 };
     try {
-      // Use in-memory state arrays sourced from Firestore
       const arrA = Array.isArray(purchaseData) ? purchaseData : [];
       const arrB = Array.isArray(purchaseOrders) ? purchaseOrders : [];
 
-      // Deterministic merge: prefer purchaseData (arrA) over purchaseOrders (arrB)
       const mergeKey = (e: any) => `${String(e.poNo||'').trim().toUpperCase()}|${String(e.indentNo||'').trim().toUpperCase()}|${String(e.itemCode||e.Code||e.Item||'').trim().toUpperCase()}`;
       const mergedMap = new Map<string, any>();
       if (Array.isArray(arrB)) arrB.forEach((e: any) => mergedMap.set(mergeKey(e), e));
@@ -1113,7 +1118,6 @@ const PSIRModule: React.FC = () => {
         }
       };
 
-      // 1) Exact match: poNo + itemCode
       details.tried.push({ step: 'po+code', targetPo, targetCode });
       const byPoAndCode = arr.find((e: any) => {
         if (!targetPo) return false;
@@ -1126,7 +1130,6 @@ const PSIRModule: React.FC = () => {
         return details;
       }
 
-      // 2) indentNo + itemCode
       details.tried.push({ step: 'indent+code', targetIndent, targetCode });
       const byIndentAndCode = arr.find((e: any) => {
         if (norm(e.indentNo) !== targetIndent) return false;
@@ -1138,14 +1141,12 @@ const PSIRModule: React.FC = () => {
         return details;
       }
 
-      // 3) PO only
       details.tried.push({ step: 'po-only', targetPo });
       if (targetPo) {
         const byPo = arr.find((e: any) => norm(e.poNo) === targetPo);
         if (byPo) { details.matched = true; details.matchedSource = 'purchaseData|purchaseOrders'; details.matchedEntry = byPo; details.qty = preferQuantityFromEntry(byPo); return details; }
       }
 
-      // 4) any code
       details.tried.push({ step: 'code-any', targetCode });
       const byCode = arr.find((e: any) => candidateCodes(e).includes(targetCode));
       if (byCode) { details.matched = true; details.matchedSource = 'purchaseData|purchaseOrders'; details.matchedEntry = byCode; details.qty = preferQuantityFromEntry(byCode); return details; }
@@ -1158,30 +1159,21 @@ const PSIRModule: React.FC = () => {
     }
   };
 
-  // Listen for purchase data updates from PurchaseModule so PO Qty column refreshes in same-window
   useEffect(() => {
     const handler = (e: any) => {
       try {
         console.debug('[PSIRModule] Received purchaseOrders.updated event', e);
-        // Force a rerender by shallow-copying psirs state
         setPsirs(prev => prev.map(p => ({ ...p, items: Array.isArray(p.items) ? p.items.map(i => ({ ...i })) : p.items })));
-        // Also refresh current newPSIR items (if any) to update PO Qty shown in 'Items in Current PSIR'
         setNewPSIR(prev => ({ ...prev, items: Array.isArray(prev.items) ? prev.items.map(it => ({ ...it })) : prev.items }));
-      } catch (err) {
-        // ignore
-      }
+      } catch (err) {}
     };
 
     const handlerPurchaseData = (e: any) => {
       try {
         console.debug('[PSIRModule] Received purchaseData.updated event', e);
-        // Force a rerender by shallow-copying psirs state
         setPsirs(prev => prev.map(p => ({ ...p, items: Array.isArray(p.items) ? p.items.map(i => ({ ...i })) : p.items })));
-        // Also refresh current newPSIR items (if any) to update PO Qty shown in 'Items in Current PSIR'
         setNewPSIR(prev => ({ ...prev, items: Array.isArray(prev.items) ? prev.items.map(it => ({ ...it })) : prev.items }));
-      } catch (err) {
-        // ignore
-      }
+      } catch (err) {}
     };
 
     try {
@@ -1196,24 +1188,18 @@ const PSIRModule: React.FC = () => {
       try {
         bus.removeEventListener('purchaseOrders.updated', handler as EventListener);
         bus.removeEventListener('purchaseData.updated', handlerPurchaseData as EventListener);
-      } catch (err) {
-        /* ignore */
-      }
+      } catch (err) {}
     };
   }, []);
 
-  // One-time sync (DISABLED): We no longer auto-fill PSIR.qtyReceived from Purchase PO Qty. This used to auto-populate missing qtyReceived values.
-  // The logic is preserved here as a manual operation available from the debug panel ("Sync Empty PO into PSIR").
   const _psirSyncedRef = useRef(false);
   useEffect(() => {
-    // noop — automatic sync disabled to keep Qty Received manual only
     if (!_psirSyncedRef.current) {
       console.debug('[PSIRModule] Automatic one-time qtyReceived sync is disabled. Use the PSIR Debug panel to run a manual sync.');
       _psirSyncedRef.current = true;
     }
   }, [psirs]);
 
-  // One-time repair: attempt to restore overwritten qtyReceived from matched purchase entry's originalIndentQty
   const _psirRepairRef = useRef(false);
   useEffect(() => {
     try {
@@ -1234,14 +1220,11 @@ const PSIRModule: React.FC = () => {
             const purchaseQty = Number(matched.purchaseQty ?? matched.poQty ?? matched.purchaseQty ?? 0) || 0;
             const originalQty = Number(matched.originalIndentQty ?? matched.originalQty ?? matched.qty ?? 0) || 0;
 
-            // If item appears overwritten (qtyReceived equals purchaseQty) and originalQty exists, restore it
             if (purchaseQty > 0 && originalQty > 0 && Number(item.qtyReceived || 0) === purchaseQty && originalQty !== purchaseQty) {
               restoredCount++;
               return { ...item, qtyReceived: originalQty };
             }
-          } catch (err) {
-            // ignore per-item errors
-          }
+          } catch (err) {}
           return item;
         });
         return { ...psir, items: newItems };
@@ -1251,7 +1234,6 @@ const PSIRModule: React.FC = () => {
         setPsirs(repaired);
         try {
           if (userUid) {
-            // persist repaired items back to Firestore for each PSIR that has an id
             (async () => {
               try {
                 await Promise.all(repaired.map(async (psir: any) => {
@@ -1280,10 +1262,8 @@ const PSIRModule: React.FC = () => {
     }
   }, [psirs]);
 
-  // One-time shift (DISABLED): We no longer auto-move PSIR.qtyReceived into Purchase records. This operation is available manually from the debug panel if you want to perform it.
   const _psirShiftRef = useRef(false);
   useEffect(() => {
-    // noop — automatic shift disabled to keep Qty Received manual-only unless explicitly requested
     if (!_psirShiftRef.current) {
       console.debug('[PSIRModule] Automatic PSIR->Purchase shift is disabled. Use the PSIR Debug panel to run it manually if needed.');
       _psirShiftRef.current = true;
@@ -1294,7 +1274,6 @@ const PSIRModule: React.FC = () => {
     <div>
       <h2>PSIR Module</h2>
       
-      {/* Import Controls */}
       <div style={{ marginBottom: 16, padding: 12, background: '#e8f5e8', border: '1px solid #4caf50', borderRadius: 6 }}>
         <h3>Import All Purchase Orders/Indents</h3>
         <div style={{ marginBottom: 12, fontSize: '14px', lineHeight: 1.6 }}>
@@ -1323,7 +1302,6 @@ const PSIRModule: React.FC = () => {
         </button>
       </div>
 
-      {/* PSIR Debug Panel Toggle */}
       <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button
           onClick={() => setPsirDebugOpen(prev => !prev)}
@@ -1339,12 +1317,11 @@ const PSIRModule: React.FC = () => {
             if (userUid) {
               try {
                 await new Promise((resolve) => {
-                  // Re-trigger the subscription to get fresh data
                   const unsub = subscribePsirs(userUid, (docs) => {
                     console.log('[PSIR] Manual refresh completed - fresh data:', docs.length, 'records');
                     console.log('[PSIR] Fresh document IDs:', docs.map(d => d.id));
                     resolve(null);
-                    unsub(); // Unsubscribe after getting data
+                    unsub();
                   });
                 });
                 alert('✅ Manual refresh completed! Check console for fresh data.');
@@ -1403,7 +1380,6 @@ const PSIRModule: React.FC = () => {
             <button onClick={manualDispatchPSIRUpdated} style={{ padding: '6px 8px' }}>Dispatch psir.updated</button>
             <button
               onClick={async () => {
-                // Debug PO Qty for current newPSIR items
                 try {
                   const details = (newPSIR.items || []).map(it => getPOQtyMatchDetails(newPSIR.poNo, newPSIR.indentNo, it.itemCode));
                   setPsirDebugExtra(formatJSON({ title: 'PO Qty match for current newPSIR items', details }));
@@ -1417,7 +1393,6 @@ const PSIRModule: React.FC = () => {
             </button>
             <button
               onClick={async () => {
-                // Manual action: Sync empty PSIR.qtyReceived from Purchase PO Qty (non-destructive)
                 try {
                   if (psirs.length === 0) { alert('No PSIR data found'); return; }
                   let changed = false;
@@ -1452,7 +1427,6 @@ const PSIRModule: React.FC = () => {
 
             <button
               onClick={async () => {
-                // Manual action: Sync PO Qty snapshot into PSIR items from Purchase (non-destructive)
                 try {
                   if (psirs.length === 0) { alert('No PSIR data found'); return; }
                   let changed = 0;
@@ -1483,7 +1457,6 @@ const PSIRModule: React.FC = () => {
 
             <button
               onClick={() => {
-                // Manual action: Shift PSIR.qtyReceived into Purchase records (destructive) — ask for confirmation
                 if (!confirm('This will move PSIR.qtyReceived into purchase records where purchaseQty is empty and clear PSIR.qtyReceived. Proceed?')) return;
                 try {
                   const arrA = Array.isArray(purchaseData) ? JSON.parse(JSON.stringify(purchaseData)) : [];
@@ -1491,7 +1464,6 @@ const PSIRModule: React.FC = () => {
                   const psirArr = Array.isArray(psirs) ? JSON.parse(JSON.stringify(psirs)) : [];
                   if (!psirArr || psirArr.length === 0) { alert('No PSIR data found'); return; }
                   let shiftedCount = 0;
-                  // perform shift similar to previous logic but as manual operation
                   const norm = (v: any) => (v === undefined || v === null) ? '' : String(v).trim().toUpperCase();
                   const newPsirs = psirArr.map((psir: any) => ({
                     ...psir,
@@ -1501,7 +1473,6 @@ const PSIRModule: React.FC = () => {
                         if (!(existingQty > 0)) return item;
                         const targetPo = norm(psir.poNo);
                         const targetCode = norm(item.itemCode);
-                        // Try purchaseData arrA
                         let foundInA = -1;
                         if (Array.isArray(arrA)) {
                           foundInA = arrA.findIndex((e: any) => targetPo && norm(e.poNo) === targetPo && [e.itemCode, e.Code, e.CodeNo, e.Item].map((c:any)=>norm(c)).includes(targetCode));
@@ -1512,7 +1483,6 @@ const PSIRModule: React.FC = () => {
                           if (existingPurchaseQty === 0) { entry.purchaseQty = existingQty; shiftedCount++; return { ...item, qtyReceived: 0 }; }
                           return item;
                         }
-                        // Try purchaseOrders arrB
                         let foundInB = -1;
                         if (Array.isArray(arrB)) {
                           foundInB = arrB.findIndex((e: any) => targetPo && norm(e.poNo) === targetPo && [e.itemCode, e.Code, e.CodeNo, e.Item].map((c:any)=>norm(c)).includes(targetCode));
@@ -1528,7 +1498,6 @@ const PSIRModule: React.FC = () => {
                     })
                   }));
                   if (shiftedCount > 0) {
-                    // Persist changes to Firestore (purchaseData, purchaseOrders and PSIRs)
                     if (userUid) {
                       (async () => {
                         try {
@@ -1540,7 +1509,6 @@ const PSIRModule: React.FC = () => {
                             await Promise.all(arrB.map(async (e: any) => { if (e && e.id) await updatePurchaseOrder(userUid, e.id, e); }));
                             try { bus.dispatchEvent(new CustomEvent('purchaseOrders.updated', { detail: arrB })); } catch (err) {}
                           }
-                          // Update PSIRs
                           await Promise.all(newPsirs.map(async (p: any) => { if (p && p.id) await updatePsir(p.id, { items: p.items }); }));
                           try { bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: newPsirs } })); } catch (err) {}
                           setPsirs(newPsirs);
@@ -1551,7 +1519,6 @@ const PSIRModule: React.FC = () => {
                         }
                       })();
                     } else {
-                      // fallback: update local state only
                       setPsirs(newPsirs);
                       try { bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: newPsirs } })); } catch (err) {}
                       alert(`Shift applied: moved ${shiftedCount} qtyReceived values into purchase records and cleared them in PSIR`);
@@ -1567,7 +1534,6 @@ const PSIRModule: React.FC = () => {
             </button>
             <button
               onClick={() => {
-                // Debug PO Qty for all PSIR records
                 try {
                   const all: any[] = [];
                   psirs.forEach(psir => psir.items.forEach((it: any) => all.push({ psir: { poNo: psir.poNo, indentNo: psir.indentNo }, item: it, details: getPOQtyMatchDetails(psir.poNo, psir.indentNo, it.itemCode) })));
@@ -1591,7 +1557,6 @@ const PSIRModule: React.FC = () => {
         </div>
       )}
 
-      {/* Rest of your existing form JSX remains the same */}
       <div style={{ marginBottom: 16, padding: 8, background: '#f5f5f5', borderRadius: 4 }}>
         <h4>Debug Info:</h4>
         <div>PO No: {newPSIR.poNo}</div>
@@ -1600,7 +1565,6 @@ const PSIRModule: React.FC = () => {
         <div>Processed POs/Indents: {processedPOs.size}</div>
       </div>
 
-      {/* DELETE DEBUG PANEL */}
       {deleteDebugOpen && (
         <div style={{ 
           marginBottom: 16, 
@@ -1701,7 +1665,6 @@ const PSIRModule: React.FC = () => {
         </div>
       )}
 
-      {/* Your existing form inputs and tables remain the same */}
       <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
         <input
           type="date"
@@ -1762,7 +1725,6 @@ const PSIRModule: React.FC = () => {
         />
       </div>
 
-      {/* Rest of your form JSX... */}
       <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <label>Item Name:</label>
         {itemNames.length > 0 ? (
@@ -1834,7 +1796,6 @@ const PSIRModule: React.FC = () => {
         </div>
       </div>
       
-      {/* Items in current PSIR form */}
       {newPSIR.items.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <h3>Items in Current PSIR:</h3>
@@ -1876,7 +1837,6 @@ const PSIRModule: React.FC = () => {
         </div>
       )}
 
-      {/* Add/Update PSIR button */}
       <div style={{ marginBottom: 16 }}>
         {editPSIRIdx === null ? (
           <button onClick={handleAddPSIR}>Add PSIR</button>
@@ -1885,7 +1845,6 @@ const PSIRModule: React.FC = () => {
         )}
       </div>
 
-      {/* Existing PSIR records */}
       <h3>PSIR Records ({psirs.length})</h3>
       <table border={1} cellPadding={6} style={{ width: '100%' }}>
         <thead>
@@ -1911,7 +1870,7 @@ const PSIRModule: React.FC = () => {
         <tbody>
           {psirs.length === 0 ? (
             <tr>
-              <td colSpan={15} style={{ textAlign: 'center', color: '#888' }}>
+              <td colSpan={16} style={{ textAlign: 'center', color: '#888' }}>
                 (No PSIR records)
               </td>
             </tr>
