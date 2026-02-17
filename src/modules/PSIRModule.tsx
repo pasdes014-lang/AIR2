@@ -304,13 +304,15 @@ const PSIRModule: React.FC = () => {
     }
   }, [userUid]);
 
-  const importAllPurchaseOrdersToPSIR = () => {
+  const importAllPurchaseOrdersToPSIR = (forceImport: boolean = false) => {
     try {
-      console.info('[PSIRModule] 🔵 MANUAL IMPORT TRIGGERED - User clicked Import button');
+      console.info('[PSIRModule]', forceImport ? '🔵 FORCE IMPORT' : '🔵 MANUAL IMPORT TRIGGERED', '- User clicked Import button');
       console.debug('[PSIRModule] purchaseOrders:', purchaseOrders);
       console.debug('[PSIRModule] purchaseData:', purchaseData);
       console.debug('[PSIRModule] psirs:', psirs);
       console.debug('[PSIRModule] userUid:', userUid);
+      console.debug('[PSIRModule] processedPOs:', processedPOs);
+      console.debug('[PSIRModule] forceImport:', forceImport);
       
       // Use purchaseOrders if available, fallback to purchaseData
       const ordersToImport = purchaseOrders.length > 0 ? purchaseOrders : purchaseData;
@@ -351,7 +353,8 @@ const PSIRModule: React.FC = () => {
         
         const orderKey = poNo ? poNo : `INDENT::${indentNo}`;
         
-        if (processedPOs.has(orderKey)) {
+        // Skip if already processed, UNLESS forceImport is true
+        if (!forceImport && processedPOs.has(orderKey)) {
           console.debug(`[PSIRModule] Skipping already processed: ${orderKey}`);
           return;
         }
@@ -1251,24 +1254,25 @@ const PSIRModule: React.FC = () => {
         <h3>Import All Purchase Orders/Indents</h3>
         <div style={{ marginBottom: 12, fontSize: '14px', lineHeight: 1.6 }}>
           <div><strong>Status:</strong></div>
-          <div>📋 Purchase Orders Loaded: <span style={{ fontWeight: 'bold', color: purchaseOrders.length > 0 ? '#4caf50' : '#f44336' }}>{purchaseOrders.length}</span></div>
+          <div>📋 Purchase Orders Loaded: <span style={{ fontWeight: 'bold', color: purchaseOrders.length > 0 ? '#4caf50' : '#999' }}>{purchaseOrders.length}</span></div>
+          <div>📋 Purchase Data Loaded: <span style={{ fontWeight: 'bold', color: purchaseData.length > 0 ? '#4caf50' : '#999' }}>{purchaseData.length}</span></div>
           <div>✅ Processed POs/Indents: <span style={{ fontWeight: 'bold' }}>{processedPOs.size}</span></div>
           <div>📦 PSIR Records: <span style={{ fontWeight: 'bold' }}>{psirs.length}</span></div>
           <div>👤 User: <span style={{ fontWeight: 'bold', color: userUid ? '#4caf50' : '#f44336' }}>{userUid ? '✓ Logged in' : '✗ Not authenticated'}</span></div>
         </div>
         <p style={{ marginBottom: 8, fontSize: '13px', color: '#666' }}>
-          {purchaseOrders.length === 0 ? '⚠️ No purchase orders loaded yet' : `Ready to import ${purchaseOrders.length} purchase orders`}
+          {purchaseOrders.length === 0 && purchaseData.length === 0 ? '⚠️ No purchase orders or data loaded yet' : `Ready to import ${Math.max(purchaseOrders.length, purchaseData.length)} records`}
         </p>
         <button 
-          onClick={importAllPurchaseOrdersToPSIR}
-          disabled={purchaseOrders.length === 0 || !userUid}
+          onClick={() => importAllPurchaseOrdersToPSIR(true)}
+          disabled={purchaseOrders.length === 0 && purchaseData.length === 0 || !userUid}
           style={{ 
             padding: '8px 16px', 
-            backgroundColor: purchaseOrders.length === 0 || !userUid ? '#ccc' : '#4caf50', 
+            backgroundColor: (purchaseOrders.length === 0 && purchaseData.length === 0) || !userUid ? '#ccc' : '#4caf50', 
             color: 'white', 
             border: 'none', 
             borderRadius: 4, 
-            cursor: purchaseOrders.length === 0 || !userUid ? 'not-allowed' : 'pointer' 
+            cursor: (purchaseOrders.length === 0 && purchaseData.length === 0) || !userUid ? 'not-allowed' : 'pointer' 
           }}
         >
           Import All Purchase Orders to PSIR
