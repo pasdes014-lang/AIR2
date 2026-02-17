@@ -399,10 +399,10 @@ export const hardResetAllData = async (uid: string) => {
       'vsirRecords',
       'purchaseOrders',
       'vendorDepts',
-      'indents'
+      'indents',
+      'stock',
+      'inHouseIssues'
     ];
-    
-    const deletionResults: Record<string, number> = {};
     
     // Delete all docs from each collection under users/{uid}
     for (const collectionName of collectionsToDelete) {
@@ -501,7 +501,9 @@ export const verifyDataCleared = async (uid: string) => {
       'vsirRecords',
       'purchaseOrders',
       'vendorDepts',
-      'indents'
+      'indents',
+      'stock',
+      'inHouseIssues'
     ];
     
     const verificationResults: Record<string, number> = {};
@@ -555,10 +557,10 @@ export const forceCleanupAllData = async (uid: string) => {
       'vsirRecords',
       'purchaseOrders',
       'vendorDepts',
-      'indents'
+      'indents',
+      'stock',
+      'inHouseIssues'
     ];
-    
-    const forceCleanupResults: Record<string, number> = {};
     
     // Force delete all docs with batch operations
     for (const collectionName of collectionsToDelete) {
