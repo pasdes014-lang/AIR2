@@ -72,7 +72,8 @@ function App() {
             if (confirm('⚠️ WARNING: This will delete ALL data except ItemMaster. Are you sure?')) {
               try {
                 await hardResetAllData(user.uid);
-                alert('✅ Hard reset completed! All data deleted except ItemMaster.');
+                alert('✅ Hard reset completed! All data deleted except ItemMaster. Refreshing page...');
+                window.location.reload();
               } catch (err) {
                 alert('❌ Hard reset failed. Check console for details.');
                 console.error('Hard reset error:', err);

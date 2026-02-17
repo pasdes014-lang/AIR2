@@ -424,14 +424,41 @@ export const hardResetAllData = async (uid: string) => {
       const q = query(psirCol, where('userId', '==', uid));
       const snap = await getDocs(q);
       
+      let deletedCount = 0;
       for (const doc of snap.docs) {
-        await deleteDoc(doc.ref);
+        try {
+          await deleteDoc(doc.ref);
+          deletedCount++;
+        } catch (err) {
+          console.error('[FirestoreServices] Error deleting PSIR:', doc.id, err);
+        }
       }
       
-      console.log(`[FirestoreServices] Deleted ${snap.docs.length} PSIRs`);
+      console.log(`[FirestoreServices] Deleted ${deletedCount} PSIRs out of ${snap.docs.length}`);
     } catch (err) {
       console.error('[FirestoreServices] Error deleting PSIRs:', err);
     }
+    
+    // Clear all localStorage caches
+    const localStorageKeys = [
+      'purchaseOrderData',
+      'vendorDeptData',
+      'indentData',
+      'vendorIssueData',
+      'vsirData',
+      'psirData',
+      'itemMasterData',
+      'userData'
+    ];
+    
+    localStorageKeys.forEach(key => {
+      try {
+        localStorage.removeItem(key);
+        console.log(`[FirestoreServices] Cleared localStorage: ${key}`);
+      } catch (err) {
+        console.error(`[FirestoreServices] Error clearing ${key}:`, err);
+      }
+    });
     
     console.log('[FirestoreServices] Hard reset completed successfully');
     return { success: true, message: 'All data deleted except ItemMaster' };
