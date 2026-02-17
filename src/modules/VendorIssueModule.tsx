@@ -1009,31 +1009,22 @@ const VendorIssueModule: React.FC = () => {
                       type="button"
                       onClick={(e) => {
                         e.preventDefault();
+                        // Delete the entire issue (not just an item)
                         setIssues(prevIssues => {
                           const before = prevIssues;
-                          const updated = prevIssues.map((iss, issIdx) => {
-                            if (issIdx !== idx) return iss;
-                            return { ...iss, items: iss.items.filter((_, itemIdx) => itemIdx !== i) };
-                          }).filter(iss => iss.items.length > 0);
+                          const updated = prevIssues.filter((_, issIdx) => issIdx !== idx);
 
-                          // Persist change: if authenticated, update/delete Firestore docs; otherwise update localStorage
+                          // Persist change: if authenticated, delete from Firestore; otherwise update localStorage
                           setTimeout(async () => {
                             try {
                               const original = before[idx];
                               if (userUid && original) {
-                                const remaining = updated.find(u => u.issueNo === original.issueNo || u.dcNo === original.dcNo);
-                                if (remaining) {
-                                  if (original.id) await updateVendorIssue(userUid, original.id, remaining);
-                                  else await addVendorIssue(userUid, remaining);
-                                } else {
-                                  // Issue removed entirely
-                                  if (original.id) await deleteVendorIssue(userUid, original.id);
-                                }
+                                if (original.id) await deleteVendorIssue(userUid, original.id);
                               } else {
                                 try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
                               }
                             } catch (err) {
-                              console.error('[VendorIssueModule] Failed to persist delete/update to Firestore:', err);
+                              console.error('[VendorIssueModule] Failed to delete from Firestore:', err);
                               try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
                             }
                           }, 0);

@@ -913,8 +913,8 @@ const VSIRModule: React.FC = () => {
                     onClick={async () => {
                       const toDelete = records[idx];
                       setRecords(prev => prev.filter((_, i) => i !== idx));
-                      if (userUid && toDelete && typeof toDelete.id === 'string') {
-                        try { await deleteVSIRRecord(userUid, toDelete.id as string); } catch (e) { console.error('[VSIR] deleteVSIRRecord failed', e); }
+                      if (userUid && toDelete && toDelete.id) {
+                        try { await deleteVSIRRecord(userUid, String(toDelete.id)); } catch (e) { console.error('[VSIR] deleteVSIRRecord failed', e); }
                       }
                     }}
                     style={{
