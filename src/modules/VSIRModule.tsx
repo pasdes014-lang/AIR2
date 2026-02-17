@@ -362,8 +362,8 @@ const VSIRModule: React.FC = () => {
         const oaNo = vendorDeptMatch?.oaNo || '';
         const batchNo = vendorDeptMatch?.batchNo || '';
 
-        for (let itemIdx = 0; itemIdx < order.items.length; itemIdx++) {
-          const item = order.items[itemIdx];
+        for (let itemIdx = 0; itemIdx < items.length; itemIdx++) {
+          const item = items[itemIdx];
           const newRecord: VSRIRecord = {
             id: Date.now() + Math.floor(Math.random() * 10000),
             receivedDate: '',
@@ -829,6 +829,23 @@ const VSIRModule: React.FC = () => {
           }}
         >
           🔍 View Data in Console
+        </button>
+        <button
+          onClick={() => {
+            console.log('[VSIR] Manual Import button clicked - running import');
+            runImport();
+          }}
+          style={{
+            padding: '8px 16px',
+            background: '#1976d2',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 4,
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
+          ▶ Run Manual Import
         </button>
         <button
           onClick={() => {
