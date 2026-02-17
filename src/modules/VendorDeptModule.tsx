@@ -2033,7 +2033,7 @@ const handleVSIRUpdate = (event?: any) => {
 								{debugReport.map((row, idx) => (
 									<tr key={idx} style={{ borderBottom: '1px solid #ddd' }}>
 										<td style={{ padding: 6, fontWeight: 'bold', width: '50%' }}>{row.label}:</td>
-										<td style={{ padding: 6, background: row.value === 'empty' || row.value === '✗ NO' || row.value === '0' ? '#ffcccc' : '#ccffcc', fontFamily: 'monospace' }}>
+										<td style={{ padding: 6, background: row.value === 'empty' || row.value === '✗ NO' || row.value === '0' ? '#ffcccc' : '#ccffcc' }}>
 											{String(row.value)}
 										</td>
 									</tr>
@@ -2343,8 +2343,8 @@ const handleVSIRUpdate = (event?: any) => {
 										<tr key={`${idx}-${itemIdx}`} style={{ borderBottom: '1px solid #ccc', background: '#fff' }}>
 											<td style={{ padding: '10px 8px', textAlign: 'center', fontWeight: 'bold', color: '#555', borderRight: '1px solid #ccc' }}>{idx + 1}</td>
 											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{item.itemName || '—'}</td>
-											<td style={{ padding: '10px 8px', fontFamily: 'monospace', fontWeight: '500', borderRight: '1px solid #ccc' }}>{item.itemCode || '—'}</td>
-											<td style={{ padding: '10px 8px', fontWeight: '500', borderRight: '1px solid #ccc' }}>{order.materialPurchasePoNo}</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{item.itemCode || '—'}</td>
+											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{order.materialPurchasePoNo}</td>
 											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{order.oaNo}</td>
 											<td style={{ padding: '10px 8px', borderRight: '1px solid #ccc' }}>{order.vendorName}</td>
 											<td style={{ padding: '10px 8px', textAlign: 'center', borderRight: '1px solid #ccc' }}>{item.qty || '—'}</td>
