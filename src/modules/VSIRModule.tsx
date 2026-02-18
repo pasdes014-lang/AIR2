@@ -161,27 +161,6 @@ const VSIRModule: React.FC = () => {
     runAutoDelete();
   }, [userUid, purchaseData, records]);
 
-  // Helper function for async auto-delete
-  function autoDeleteVSIRRecords(uid: string, recs: any[]) {
-    Promise.resolve().then(async () => {
-      for (const rec of recs) {
-        try {
-          if (!rec || !rec.id) {
-            console.log('[VSIR][DEBUG] Skipping invalid record:', rec);
-            continue;
-          }
-          console.log('[VSIR][DEBUG] Attempting to delete VSIR record:', rec);
-          await deleteVSIRRecord(uid, String(rec.id));
-          console.log('[VSIR][DEBUG] Successfully auto-deleted VSIR record:', rec.id);
-          alert('[VSIR][DEBUG] Successfully auto-deleted VSIR record: ' + rec.id);
-        } catch (e) {
-          const errMsg = (e && typeof e === 'object' && 'message' in e) ? (e as any).message : String(e);
-          alert('[VSIR][DEBUG] Failed to auto-delete VSIR record: ' + rec.id + '\nError: ' + errMsg);
-          console.error('[VSIR][DEBUG] Failed to auto-delete VSIR record:', rec.id, e);
-        }
-      }
-    });
-  }
 
         // subscribe to purchaseOrders in real-time (alternative source)
         const unsubPurchaseOrders = subscribePurchaseOrders(uid, (docs) => {
