@@ -449,6 +449,14 @@ const StockModule: React.FC = () => {
     };
   }, [userUid]);
 
+  // Debug: Log indentState changes
+  useEffect(() => {
+    console.log('[StockModule] indentState updated:', indentState.length, 'indents');
+    if (indentState.length > 0) {
+      console.log('[StockModule] Sample indent:', indentState[0]);
+    }
+  }, [indentState]);
+
   // Update debug panel when item input changes
   useEffect(() => {
     if (itemInput.itemName || itemInput.itemCode) {
