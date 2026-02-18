@@ -124,27 +124,44 @@ const VSIRModule: React.FC = () => {
         });
   // Auto-delete all VSIR records if purchaseData is empty
   useEffect(() => {
-    if (userUid && purchaseData.length === 0 && records.length > 0) {
+    if (!userUid || typeof userUid !== 'string') {
+      console.log('[VSIR][DEBUG] Auto-delete not triggered: userUid is missing or invalid.', userUid);
+      return;
+    }
+    if (!Array.isArray(purchaseData) || !Array.isArray(records)) {
+      console.log('[VSIR][DEBUG] Auto-delete not triggered: purchaseData or records is not an array.', purchaseData, records);
+      return;
+    }
+    if (purchaseData.length === 0 && records.length > 0) {
       console.log('[VSIR][DEBUG] Triggering auto-delete: userUid=', userUid, 'purchaseData.length=', purchaseData.length, 'records.length=', records.length);
       alert('[VSIR][DEBUG] Attempting to auto-delete all VSIR records because purchaseData is empty. See console for details.');
-      (async () => {
-        for (const rec of records) {
-          try {
-            console.log('[VSIR][DEBUG] Attempting to delete VSIR record:', rec);
-            await deleteVSIRRecord(userUid, String(rec.id));
-            console.log('[VSIR][DEBUG] Successfully auto-deleted VSIR record:', rec.id);
-            alert('[VSIR][DEBUG] Successfully auto-deleted VSIR record: ' + rec.id);
-          } catch (e) {
-            console.error('[VSIR][DEBUG] Failed to auto-delete VSIR record:', rec.id, e);
-            const errMsg = (e && typeof e === 'object' && 'message' in e) ? (e as any).message : String(e);
-            alert('[VSIR][DEBUG] Failed to auto-delete VSIR record: ' + rec.id + '\nError: ' + errMsg);
-          }
-        }
-      })();
+      autoDeleteVSIRRecords(userUid, records);
     } else {
       console.log('[VSIR][DEBUG] Auto-delete not triggered. userUid:', userUid, 'purchaseData.length:', purchaseData.length, 'records.length:', records.length);
     }
   }, [userUid, purchaseData, records]);
+
+  // Helper function for async auto-delete
+  function autoDeleteVSIRRecords(uid: string, recs: any[]) {
+    Promise.resolve().then(async () => {
+      for (const rec of recs) {
+        try {
+          if (!rec || !rec.id) {
+            console.log('[VSIR][DEBUG] Skipping invalid record:', rec);
+            continue;
+          }
+          console.log('[VSIR][DEBUG] Attempting to delete VSIR record:', rec);
+          await deleteVSIRRecord(uid, String(rec.id));
+          console.log('[VSIR][DEBUG] Successfully auto-deleted VSIR record:', rec.id);
+          alert('[VSIR][DEBUG] Successfully auto-deleted VSIR record: ' + rec.id);
+        } catch (e) {
+          const errMsg = (e && typeof e === 'object' && 'message' in e) ? (e as any).message : String(e);
+          alert('[VSIR][DEBUG] Failed to auto-delete VSIR record: ' + rec.id + '\nError: ' + errMsg);
+          console.error('[VSIR][DEBUG] Failed to auto-delete VSIR record:', rec.id, e);
+        }
+      }
+    });
+  }
 
         // subscribe to purchaseOrders in real-time (alternative source)
         const unsubPurchaseOrders = subscribePurchaseOrders(uid, (docs) => {
