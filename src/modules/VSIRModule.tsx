@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { subscribePsirs } from '../utils/psirService';
@@ -78,6 +78,9 @@ const VSIRModule: React.FC = () => {
   const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [psirData, setPsirData] = useState<any[]>([]);
   const [userUid, setUserUid] = useState<string | null>(null);
+  
+  // Track existing PO+ItemCode combinations to prevent duplicates during import
+  const existingCombinationsRef = useRef<Set<string>>(new Set());
 
   // Initialize component - set isInitialized to true on mount
   useEffect(() => {
@@ -149,6 +152,14 @@ const VSIRModule: React.FC = () => {
 
       return () => { try { unsubAuth(); } catch {} };
   }, []);
+
+  // Update the existing combinations ref whenever records change
+  useEffect(() => {
+    existingCombinationsRef.current = new Set(
+      records.map(r => `${String(r.poNo).trim()}|${String(r.itemCode).trim()}`)
+    );
+    console.log('[VSIR] Updated dedup cache with', existingCombinationsRef.current.size, 'combinations');
+  }, [records]);
 
   // Auto-fill Indent No from PSIR for all records that have poNo but missing indentNo
   // PSIR data is already subscribed in the auth effect above, just use it here
@@ -348,8 +359,9 @@ const VSIRModule: React.FC = () => {
     console.log('[VSIR] Source data entries:', sourceData.length);
 
     try {
-      // Dedup: check both PO No and item code to prevent exact duplicates
-      const existingRecords = new Set(records.map(r => `${String(r.poNo).trim()}|${String(r.itemCode).trim()}`));
+      // Use ref for dedup to ensure we have current combinations even if records state is stale
+      const currentCombinations = existingCombinationsRef.current;
+      console.log('[VSIR] Dedup cache has', currentCombinations.size, 'combinations');
       let importCount = 0;
 
       for (let orderIdx = 0; orderIdx < sourceData.length; orderIdx++) {
@@ -370,8 +382,8 @@ const VSIRModule: React.FC = () => {
           const itemCode = item.itemCode || '';
           const dedupeKey = `${String(poNo).trim()}|${String(itemCode).trim()}`;
           
-          // Skip if this PO+Item combination already exists
-          if (existingRecords.has(dedupeKey)) {
+          // Skip if this PO+Item combination already exists (check against current ref, not stale state)
+          if (currentCombinations.has(dedupeKey)) {
             console.log(`[VSIR]  skipping duplicate: ${dedupeKey}`);
             continue;
           }
