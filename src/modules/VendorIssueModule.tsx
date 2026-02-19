@@ -143,6 +143,23 @@ const VendorIssueModule: React.FC = () => {
   const [vsirRecords, setVsirRecords] = useState<any[]>([]);
   const [editIssueIdx, setEditIssueIdx] = useState<number | null>(null);
 
+  // Helper: deduplicate Vendor Issues by PO + Date + first item (to allow multiple issues per PO on different dates)
+  const deduplicateVendorIssues = (arr: VendorIssue[]): VendorIssue[] => {
+    const seen = new Set<string>();
+    const deduped: VendorIssue[] = [];
+    for (const issue of arr) {
+      const firstItemKey = issue.items && issue.items.length > 0 
+        ? `${issue.items[0].itemCode || issue.items[0].itemName}` 
+        : '';
+      const key = `${String(issue.materialPurchasePoNo || '').trim().toLowerCase()}|${issue.date}|${firstItemKey}`;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        deduped.push(issue);
+      }
+    }
+    return deduped;
+  };
+
   // Helper: get vendor batch no from subscribed VSIR records
   const getVendorBatchNoFromVSIR = (poNo: any): string => {
     try {
@@ -183,7 +200,8 @@ const VendorIssueModule: React.FC = () => {
     try {
       unsubIssues = subscribeVendorIssues(userUid, (docs) => {
         const mapped = docs.map(d => ({ ...d, items: Array.isArray(d.items) ? d.items : [] }));
-        setIssues(mapped as VendorIssue[]);
+        const deduped = deduplicateVendorIssues(mapped as VendorIssue[]);
+        setIssues(deduped);
       });
     } catch (err) { console.error('[VendorIssueModule] subscribeVendorIssues failed:', err); }
 
@@ -437,21 +455,22 @@ const VendorIssueModule: React.FC = () => {
     
     if (updated) {
       console.debug('[VendorIssueModule][Sync] Syncing vendor info to issues');
-      setIssues(updatedIssues);
+      const dedupedUpdatedIssues = deduplicateVendorIssues(updatedIssues);
+      setIssues(dedupedUpdatedIssues);
       if (userUid) {
         (async () => {
           try {
-            await Promise.all(updatedIssues.map(async (iss: any) => {
+            await Promise.all(dedupedUpdatedIssues.map(async (iss: any) => {
               if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
               else await addVendorIssue(userUid, iss);
             }));
           } catch (err) {
             console.error('[VendorIssueModule] Failed to persist synced vendor info to Firestore:', err);
-            try { localStorage.setItem('vendorIssueData', JSON.stringify(updatedIssues)); } catch {}
+            try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
           }
         })();
       } else {
-        try { localStorage.setItem('vendorIssueData', JSON.stringify(updatedIssues)); } catch {}
+        try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
       }
     }
   }, [vendorDeptOrders]);
@@ -478,22 +497,23 @@ const VendorIssueModule: React.FC = () => {
         console.debug('[VendorIssueModule][AutoAdd] Using fallback DC No:', autoDcNo);
       }
       const updated = [...issues, { ...newIssue, dcNo: autoDcNo, issueNo: getNextIssueNo(issues) }];
-      setIssues(updated);
+      const dedupedUpdated = deduplicateVendorIssues(updated);
+      setIssues(dedupedUpdated);
       if (userUid) {
         (async () => {
           try {
-            const last = updated[updated.length - 1];
+            const last = dedupedUpdated[dedupedUpdated.length - 1];
             if (last && !last.id) await addVendorIssue(userUid, last);
             // Let subscription refresh the list; keep local UI responsive
           } catch (err) {
             console.error('[VendorIssueModule] Failed to add Vendor Issue to Firestore:', err);
-            try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
+            try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
           }
         })();
       } else {
-        try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
+        try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
       }
-      clearNewIssue(updated);
+      clearNewIssue(dedupedUpdated);
       console.debug('[VendorIssueModule][AutoAdd] Auto-added Vendor Issue:', { ...newIssue, dcNo: autoDcNo });
     }
   }, [newIssue, issues, vendorDeptOrders]);
@@ -602,21 +622,22 @@ const VendorIssueModule: React.FC = () => {
 
       if (added) {
         console.debug('[VendorIssueModule][AutoImport] Imported new issues:', newIssues);
-        setIssues(newIssues);
+        const dedupedNewIssues = deduplicateVendorIssues(newIssues);
+        setIssues(dedupedNewIssues);
         if (userUid) {
           (async () => {
             try {
-              await Promise.all(newIssues.map(async (iss: any) => {
+              await Promise.all(dedupedNewIssues.map(async (iss: any) => {
                 if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
                 else await addVendorIssue(userUid, iss);
               }));
             } catch (err) {
               console.error('[VendorIssueModule] Failed to persist imported issues to Firestore:', err);
-              try { localStorage.setItem('vendorIssueData', JSON.stringify(newIssues)); } catch {}
+              try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedNewIssues)); } catch {}
             }
           })();
         } else {
-          try { localStorage.setItem('vendorIssueData', JSON.stringify(newIssues)); } catch {}
+          try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedNewIssues)); } catch {}
         }
       }
     };
@@ -658,21 +679,22 @@ const VendorIssueModule: React.FC = () => {
       
       if (updated) {
         console.debug('[VendorIssueModule][FillMissing] Updated issues:', updatedIssues);
-        setIssues(updatedIssues);
+        const dedupedUpdatedIssues = deduplicateVendorIssues(updatedIssues);
+        setIssues(dedupedUpdatedIssues);
         if (userUid) {
           (async () => {
             try {
-              await Promise.all(updatedIssues.map(async (iss: any) => {
+              await Promise.all(dedupedUpdatedIssues.map(async (iss: any) => {
                 if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
                 else await addVendorIssue(userUid, iss);
               }));
             } catch (err) {
               console.error('[VendorIssueModule] Failed to persist filled missing OA/Batch to Firestore:', err);
-              try { localStorage.setItem('vendorIssueData', JSON.stringify(updatedIssues)); } catch {}
+              try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
             }
           })();
         } else {
-          try { localStorage.setItem('vendorIssueData', JSON.stringify(updatedIssues)); } catch {}
+          try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
         }
       }
     } catch (e) {
@@ -706,21 +728,22 @@ const VendorIssueModule: React.FC = () => {
     const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
     const dcNo = match && match.dcNo && String(match.dcNo).trim() !== '' ? match.dcNo : getNextDCNo(issues);
     const updated = [...issues, { ...newIssue, dcNo, issueNo: getNextIssueNo(issues) }];
-    setIssues(updated);
+    const dedupedUpdated = deduplicateVendorIssues(updated);
+    setIssues(dedupedUpdated);
     if (userUid) {
       (async () => {
         try {
-          const last = updated[updated.length - 1];
+          const last = dedupedUpdated[dedupedUpdated.length - 1];
           if (last && !last.id) await addVendorIssue(userUid, last);
         } catch (err) {
           console.error('[VendorIssueModule] Failed to add Vendor Issue to Firestore:', err);
-          try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
+          try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
         }
       })();
     } else {
-      try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
+      try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
     }
-    clearNewIssue(updated);
+    clearNewIssue(dedupedUpdated);
   };
 
   const handleEditIssue = (idx: number) => {
@@ -748,23 +771,24 @@ const VendorIssueModule: React.FC = () => {
     const updated = issues.map((issue, idx) =>
       idx === editIssueIdx ? { ...newIssue, dcNo } : issue
     );
-    setIssues(updated);
+    const dedupedUpdated = deduplicateVendorIssues(updated);
+    setIssues(dedupedUpdated);
     if (userUid) {
       (async () => {
         try {
-          await Promise.all(updated.map(async (iss: any) => {
+          await Promise.all(dedupedUpdated.map(async (iss: any) => {
             if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
             else await addVendorIssue(userUid, iss);
           }));
         } catch (err) {
           console.error('[VendorIssueModule] Failed to persist updated Vendor Issue to Firestore:', err);
-          try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
+          try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
         }
       })();
     } else {
-      try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
+      try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
     }
-    clearNewIssue(updated);
+    clearNewIssue(dedupedUpdated);
     setEditIssueIdx(null);
   };
 
