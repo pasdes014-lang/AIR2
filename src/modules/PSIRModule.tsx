@@ -1738,7 +1738,7 @@ const PSIRModule: React.FC = () => {
           type="number"
           placeholder="OK Qty"
           name="okQty"
-          value={itemInput.okQty || ''}
+          value={itemInput.okQty !== undefined && itemInput.okQty !== null ? itemInput.okQty : ''}
           onChange={handleItemInputChange}
         />
         <input
