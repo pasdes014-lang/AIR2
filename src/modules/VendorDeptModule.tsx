@@ -558,7 +558,7 @@ const VendorDeptModule: React.FC = () => {
 				setItemInput(prev => ({
 					...prev,
 					receivedQty,
-					// okQty, // Removed: OK Qty should not be auto-filled from VSIR
+					okQty, // Auto-fill OK Qty from VSIR
 					reworkQty,
 					rejectedQty,
 					grnNo
