@@ -11,6 +11,7 @@ import {
   subscribeVendorDepts,
   getItemMaster,
   subscribeVSIRRecords,
+  subscribePurchaseOrders,
 } from '../utils/firestoreServices';
 
 interface VendorIssueItem {
@@ -139,6 +140,7 @@ const VendorIssueModule: React.FC = () => {
   const [itemNames, setItemNames] = useState<string[]>([]);
   const [itemMaster, setItemMaster] = useState<{ itemName: string; itemCode: string }[]>([]);
   const [vendorDeptOrders, setVendorDeptOrders] = useState<any[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [userUid, setUserUid] = useState<string | null>(null);
   const [vsirRecords, setVsirRecords] = useState<any[]>([]);
   const [editIssueIdx, setEditIssueIdx] = useState<number | null>(null);
@@ -191,6 +193,7 @@ const VendorIssueModule: React.FC = () => {
     let unsubIssues: (() => void) | null = null;
     let unsubVendorDepts: (() => void) | null = null;
     let unsubVsir: (() => void) | null = null;
+    let unsubPurchaseOrders: (() => void) | null = null;
 
     if (!userUid) {
       // when not authenticated, keep using localStorage (existing behavior)
@@ -213,6 +216,13 @@ const VendorIssueModule: React.FC = () => {
       unsubVsir = subscribeVSIRRecords(userUid, (docs) => setVsirRecords(docs));
     } catch (err) { console.error('[VendorIssueModule] subscribeVSIRRecords failed:', err); }
 
+    try {
+      unsubPurchaseOrders = subscribePurchaseOrders(userUid, (docs) => {
+        console.log('[VendorIssueModule] ✓ Received purchaseOrders from Firestore:', docs.length, 'items');
+        setPurchaseOrders(docs || []);
+      });
+    } catch (err) { console.error('[VendorIssueModule] subscribePurchaseOrders failed:', err); }
+
     // Try to prime itemMaster from Firestore
     (async () => {
       try {
@@ -228,6 +238,7 @@ const VendorIssueModule: React.FC = () => {
       if (unsubIssues) unsubIssues();
       if (unsubVendorDepts) unsubVendorDepts();
       if (unsubVsir) unsubVsir();
+      if (unsubPurchaseOrders) unsubPurchaseOrders();
     };
   }, [userUid]);
 
@@ -512,32 +523,19 @@ const VendorIssueModule: React.FC = () => {
     }
   }, [newIssue, issues, vendorDeptOrders]);
 
-  // Auto-import purchase orders - track imported POs to avoid duplicates
+  // Auto-import purchase orders from Firestore subscription
   useEffect(() => {
     const importPurchaseOrders = () => {
-      const purchaseOrdersRaw = localStorage.getItem('purchaseOrders');
       console.log('[VendorIssueModule][AutoImport] === IMPORT CYCLE STARTED ===');
-      console.log('[VendorIssueModule][AutoImport] purchaseOrdersRaw exists:', !!purchaseOrdersRaw);
+      console.log('[VendorIssueModule][AutoImport] purchaseOrders from Firestore count:', purchaseOrders.length);
       
-      let purchaseEntries = [];
-      try {
-        purchaseEntries = purchaseOrdersRaw ? JSON.parse(purchaseOrdersRaw) : [];
-        console.log('[VendorIssueModule][AutoImport] ✓ Parsed purchaseEntries count:', purchaseEntries.length);
-        if (purchaseEntries.length > 0) {
-          console.log('[VendorIssueModule][AutoImport] First 3 entries:', purchaseEntries.slice(0, 3).map((e: any) => ({ poNo: e.poNo, itemName: e.itemName })));
-        }
-      } catch (err) {
-        console.error('[VendorIssueModule][AutoImport] ✗ Error parsing purchaseOrders:', err);
-        return;
-      }
-
-      if (purchaseEntries.length === 0) {
-        console.warn('[VendorIssueModule][AutoImport] No purchase entries found in localStorage, skipping import');
+      if (purchaseOrders.length === 0) {
+        console.warn('[VendorIssueModule][AutoImport] No purchase orders in Firestore, skipping import');
         return;
       }
 
       const poGroups: Record<string, any[]> = {};
-      purchaseEntries.forEach((entry: any) => {
+      purchaseOrders.forEach((entry: any) => {
         if (!entry.poNo) {
           console.warn('[VendorIssueModule][AutoImport] Entry missing poNo:', entry);
           return;
@@ -661,16 +659,12 @@ const VendorIssueModule: React.FC = () => {
       console.log('[VendorIssueModule][AutoImport] === IMPORT CYCLE ENDED ===\n');
     };
 
-    console.log('[VendorIssueModule][AutoImport] Setting up auto-import (runs every 1s and on storage events)');
-    importPurchaseOrders();
-    window.addEventListener('storage', importPurchaseOrders);
-    const interval = setInterval(importPurchaseOrders, 1000);
-    return () => {
-      window.removeEventListener('storage', importPurchaseOrders);
-      clearInterval(interval);
-      console.log('[VendorIssueModule][AutoImport] Auto-import cleanup');
-    };
-  }, [userUid, vendorDeptOrders]);
+    // Only run import when there are purchase orders to import
+    if (purchaseOrders.length > 0 && userUid) {
+      console.log('[VendorIssueModule][AutoImport] Triggering import based on purchaseOrders update');
+      importPurchaseOrders();
+    }
+  }, [purchaseOrders, userUid]);
 
   // Fill missing OA No and Batch No from PSIR for existing issues
   useEffect(() => {
