@@ -612,14 +612,12 @@ const VendorDeptModule: React.FC = () => {
 		setItemInput(prev => ({ ...prev, qty: poQty }));
 	}, [newOrder.materialPurchasePoNo, itemInput.itemCode, purchaseOrders, purchaseData]);
 
-	// Sync quantities from VSIR to existing orders
+	// Sync quantities from VSIR to existing orders (trigger on orders or vsirRecords change)
 	useEffect(() => {
 		if (orders.length === 0) return;
-		
 		try {
 			if (!vsirRecords) return;
 			if (!Array.isArray(vsirRecords)) return;
-			
 			let updated = false;
 			const updatedOrders = orders.map(order => {
 				const updatedItems = order.items.map((item: any) => {
@@ -628,18 +626,16 @@ const VendorDeptModule: React.FC = () => {
 						vsir.poNo === order.materialPurchasePoNo &&
 						vsir.itemCode === item.itemCode
 					);
-					
 					if (matchingVSIR) {
 						const newReceivedQty = matchingVSIR.qtyReceived || 0;
 						const newOkQty = matchingVSIR.okQty || 0;
 						const newReworkQty = matchingVSIR.reworkQty || 0;
 						const newRejectedQty = matchingVSIR.rejectQty || 0;
 						const newGrnNo = matchingVSIR.grnNo || '';
-						
 						// Only update if values differ
 						if (newReceivedQty !== item.receivedQty || newOkQty !== item.okQty || 
-						    newReworkQty !== item.reworkQty || newRejectedQty !== item.rejectedQty ||
-						    newGrnNo !== item.grnNo) {
+								newReworkQty !== item.reworkQty || newRejectedQty !== item.rejectedQty ||
+								newGrnNo !== item.grnNo) {
 							console.debug('[VendorDeptModule][Sync] Updating VSIR data for PO:', order.materialPurchasePoNo, 'Item:', item.itemCode);
 							updated = true;
 							return {
@@ -656,10 +652,8 @@ const VendorDeptModule: React.FC = () => {
 					}
 					return item;
 				});
-				
 				return { ...order, items: updatedItems };
 			});
-			
 			if (updated) {
 				console.debug('[VendorDeptModule][Sync] Syncing VSIR data to vendor dept orders');
 				setOrders(updatedOrders);
@@ -668,7 +662,7 @@ const VendorDeptModule: React.FC = () => {
 		} catch (e) {
 			console.error('[VendorDeptModule][Sync] Error syncing VSIR data:', e);
 		}
-	}, [orders]);
+	}, [orders, vsirRecords]);
 
 	// Listen for VSIR updates
 	useEffect(() => {
