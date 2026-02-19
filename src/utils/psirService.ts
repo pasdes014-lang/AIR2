@@ -3,6 +3,31 @@ import { db } from '../firebase';
 
 type PSIRDoc = Record<string, any>;
 
+// Simple normalization utilities to avoid persisting negative/string qtys and okQty
+const normalizeQty = (val: any): number | undefined => {
+  if (val === null || val === undefined || val === '') return undefined;
+  const n = Number(val);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.abs(n);
+};
+
+const sanitizePsirData = (data: any) => {
+  if (!data || typeof data !== 'object') return data;
+  const d: any = { ...data };
+  if ('poQty' in d) d.poQty = normalizeQty(d.poQty);
+  if ('okQty' in d) delete d.okQty;
+  if (Array.isArray(d.items)) {
+    d.items = d.items.map((it: any) => {
+      if (!it || typeof it !== 'object') return it;
+      const copy = { ...it };
+      if ('poQty' in copy) copy.poQty = normalizeQty(copy.poQty);
+      if ('okQty' in copy) delete copy.okQty;
+      return copy;
+    });
+  }
+  return d;
+};
+
 export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: string }>) => void) => {
   console.log('[PSIRService.subscribePsirs] Setting up listener for user:', uid);
   const col = collection(db, 'psirs');
@@ -174,14 +199,16 @@ export const subscribePsirs = (uid: string, cb: (docs: Array<PSIRDoc & { id: str
 
 export const addPsir = async (uid: string, data: any) => {
   console.log('[psirService.addPsir] Starting - uid:', uid);
-  const ref = await addDoc(collection(db, 'psirs'), { ...data, userId: uid, createdAt: serverTimestamp() });
+  const sanitized = sanitizePsirData(data);
+  const ref = await addDoc(collection(db, 'psirs'), { ...sanitized, userId: uid, createdAt: serverTimestamp() });
   console.log('[psirService.addPsir] Success - new ID:', ref.id);
   return ref.id;
 };
 
 export const updatePsir = async (id: string, data: any) => {
   console.log('[psirService.updatePsir] Starting - id:', id, 'data:', data);
-  await updateDoc(doc(db, 'psirs', id), { ...data, updatedAt: serverTimestamp() });
+  const sanitized = sanitizePsirData(data);
+  await updateDoc(doc(db, 'psirs', id), { ...sanitized, updatedAt: serverTimestamp() });
   console.log('[psirService.updatePsir] Success - updated ID:', id);
 };
 
