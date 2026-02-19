@@ -5,9 +5,9 @@ const VendorDeptModule = () => {
 	// Debug state for OK Qty auto-fill
 	const [debugOkQty, setDebugOkQty] = useState<any>(null);
 	// ...existing code...
+};
 
-import React, { useState, useEffect } from 'react';
-import bus from '../utils/eventBus';
+export default VendorDeptModule;
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 import { getPurchaseOrders, getPurchaseData, subscribeVendorDepts, addVendorDept, updateVendorDept, deleteVendorDept } from '../utils/firestoreServices';
