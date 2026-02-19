@@ -1,3 +1,5 @@
+	// Debug state for OK Qty auto-fill
+	const [debugOkQty, setDebugOkQty] = useState<any>(null);
 import React, { useState, useEffect } from 'react';
 import bus from '../utils/eventBus';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -540,35 +542,75 @@ const VendorDeptModule: React.FC = () => {
 				vsir.itemCode === itemInput.itemCode
 			);
 			
-			if (matchingVSIR) {
-				const receivedQty = matchingVSIR.qtyReceived || 0;
-				let okQty = 0;
-				if (typeof matchingVSIR.okQty === 'number' && matchingVSIR.okQty > 0) {
-				  okQty = matchingVSIR.okQty;
-				} else if (typeof matchingVSIR.qtyReceived === 'number' && matchingVSIR.qtyReceived > 0) {
-				  okQty = matchingVSIR.qtyReceived;
-				}
-				const reworkQty = matchingVSIR.reworkQty || 0;
-				const rejectedQty = matchingVSIR.rejectQty || 0;
-				const grnNo = matchingVSIR.grnNo || '';
+						if (matchingVSIR) {
+								const receivedQty = matchingVSIR.qtyReceived || 0;
+								let okQty = 0;
+								let debugReason = '';
+								if (typeof matchingVSIR.okQty === 'number' && matchingVSIR.okQty > 0) {
+									okQty = matchingVSIR.okQty;
+									debugReason = 'Used okQty from VSIR';
+								} else if (typeof matchingVSIR.qtyReceived === 'number' && matchingVSIR.qtyReceived > 0) {
+									okQty = matchingVSIR.qtyReceived;
+									debugReason = 'okQty missing, used qtyReceived from VSIR';
+								} else {
+									debugReason = 'No okQty or qtyReceived found in VSIR';
+								}
+								const reworkQty = matchingVSIR.reworkQty || 0;
+								const rejectedQty = matchingVSIR.rejectQty || 0;
+								const grnNo = matchingVSIR.grnNo || '';
                 
-				console.debug('[VendorDeptModule][AutoFill] Found VSIR data for PO:', newOrder.materialPurchasePoNo, 'Item:', itemInput.itemCode, {
-					receivedQty,
-					okQty,
-					reworkQty,
-					rejectedQty,
-					grnNo
-				});
+								setDebugOkQty({
+									poNo: newOrder.materialPurchasePoNo,
+									itemCode: itemInput.itemCode,
+									matchingVSIR,
+									receivedQty,
+									okQty,
+									reworkQty,
+									rejectedQty,
+									grnNo,
+									debugReason
+								});
                 
-				setItemInput(prev => ({
-					...prev,
-					receivedQty,
-					okQty, // Auto-fill OK Qty from VSIR or fallback to qtyReceived
-					reworkQty,
-					rejectedQty,
-					grnNo
-				}));
-			}
+								setItemInput(prev => ({
+										...prev,
+										receivedQty,
+										okQty, // Auto-fill OK Qty from VSIR or fallback to qtyReceived
+										reworkQty,
+										rejectedQty,
+										grnNo
+								}));
+						} else {
+								setDebugOkQty({
+									poNo: newOrder.materialPurchasePoNo,
+									itemCode: itemInput.itemCode,
+									matchingVSIR: null,
+									debugReason: 'No matching VSIR record found'
+								});
+						}
+			{/* Debug Panel for OK Qty auto-fill */}
+			{debugOkQty && (
+				<div style={{ margin: '16px 0', padding: 12, background: '#e3f2fd', border: '2px solid #1976d2', borderRadius: 4 }}>
+					<h4 style={{ margin: '0 0 8px 0', color: '#1976d2' }}>🛠️ OK Qty Auto-Fill Debug Panel</h4>
+					<div style={{ fontSize: 13, marginBottom: 6 }}>
+						<strong>PO No:</strong> {debugOkQty.poNo} &nbsp; <strong>Item Code:</strong> {debugOkQty.itemCode}
+					</div>
+					<div style={{ fontSize: 13, marginBottom: 6 }}>
+						<strong>VSIR Match:</strong> {debugOkQty.matchingVSIR ? '✅ Found' : '❌ Not Found'}
+					</div>
+					<div style={{ fontSize: 13, marginBottom: 6 }}>
+						<strong>Auto-filled OK Qty:</strong> {debugOkQty.okQty ?? '—'}
+					</div>
+					<div style={{ fontSize: 13, marginBottom: 6 }}>
+						<strong>Reason:</strong> {debugOkQty.debugReason}
+					</div>
+					{debugOkQty.matchingVSIR && (
+						<details style={{ fontSize: 12, marginTop: 6 }}>
+							<summary>Show VSIR Record</summary>
+							<pre style={{ background: '#f5f5f5', padding: 6, borderRadius: 3, fontSize: 11, margin: 0 }}>{JSON.stringify(debugOkQty.matchingVSIR, null, 2)}</pre>
+						</details>
+					)}
+				</div>
+			)}
 		} catch (e) {
 			console.error('[VendorDeptModule][AutoFill] Error reading VSIR data:', e);
 		}
