@@ -916,7 +916,7 @@ const VSIRModule: React.FC = () => {
                           .then(() => {
                             console.log('[VSIR] Successfully deleted from Firestore:', toDelete.id);
                             // Remove from local state after successful Firestore delete
-                            setRecords(prev => prev.filter((_, i) => i !== idx));
+                            setRecords(prev => prev.filter(r => r.id !== toDelete.id));
                           })
                           .catch((e) => {
                             console.error('[VSIR] deleteVSIRRecord failed:', e, 'Record ID:', toDelete.id);
@@ -924,7 +924,7 @@ const VSIRModule: React.FC = () => {
                           });
                       } else {
                         // No userUid, just remove from state
-                        setRecords(prev => prev.filter((_, i) => i !== idx));
+                        setRecords(prev => prev.filter(r => r.id !== toDelete.id));
                       }
                     }}
                     style={{
