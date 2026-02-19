@@ -988,7 +988,7 @@ const VendorIssueModule: React.FC = () => {
               // Find plannedQty from vendorDeptOrders
               let plannedQty = 0;
               for (const order of vendorDeptOrders) {
-                const deptItem = (order.items || []).find(it => it.itemName === value && it.itemCode === foundCode);
+                const deptItem = (order.items || []).find((it: any) => it.itemName === value && it.itemCode === foundCode);
                 if (deptItem && deptItem.plannedQty !== undefined) {
                   plannedQty = deptItem.plannedQty;
                   break;
