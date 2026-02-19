@@ -985,13 +985,15 @@ const VendorIssueModule: React.FC = () => {
               const value = e.target.value;
               const found = itemMaster.find(item => item.itemName === value);
               const foundCode = found ? found.itemCode : '';
-              // Find plannedQty from vendorDeptOrders
+              // Find plannedQty from vendorDeptOrders for the selected PO and item
               let plannedQty = 0;
-              for (const order of vendorDeptOrders) {
-                const deptItem = (order.items || []).find((it: any) => it.itemName === value && it.itemCode === foundCode);
-                if (deptItem && deptItem.plannedQty !== undefined) {
-                  plannedQty = deptItem.plannedQty;
-                  break;
+              if (newIssue.materialPurchasePoNo) {
+                const deptOrder = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
+                if (deptOrder && Array.isArray(deptOrder.items)) {
+                  const deptItem = deptOrder.items.find((it: any) => it.itemName === value && it.itemCode === foundCode);
+                  if (deptItem && typeof deptItem.plannedQty === 'number') {
+                    plannedQty = deptItem.plannedQty;
+                  }
                 }
               }
               setItemInput({ ...itemInput, itemName: value, itemCode: foundCode, qty: plannedQty });
