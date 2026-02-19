@@ -6,7 +6,7 @@ import { subscribeVSIRRecords, addVSIRRecord, updateVSIRRecord, deleteVSIRRecord
 import bus from '../utils/eventBus';
 
 interface VSRIRecord {
-  id: number;
+  id: string;
   receivedDate: string;
   indentNo: string;
   poNo: string;
@@ -440,7 +440,7 @@ const VSIRModule: React.FC = () => {
           }
           
           const newRecord: VSRIRecord = {
-            id: Date.now() + Math.floor(Math.random() * 10000),
+            id: Math.random().toString(36).slice(2),
             receivedDate: '',
             indentNo: '',
             poNo,
@@ -756,16 +756,14 @@ const VSIRModule: React.FC = () => {
       // Add new: use Firestore-generated ID
       if (userUid) {
         try {
-          const docRef = await addVSIRRecord(userUid, { ...finalItemInput });
-          // Firestore should return the new doc ref/id
-          const firestoreId = docRef?.id || (typeof docRef === 'string' ? docRef : undefined);
+          const firestoreId = await addVSIRRecord(userUid, { ...finalItemInput });
           if (firestoreId) {
             const newRecord = { ...finalItemInput, id: firestoreId };
             updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
             setRecords(updatedRecords);
           } else {
-            // fallback: just add with a random id
-            const newRecord = { ...finalItemInput, id: Date.now() };
+            // fallback: just add with a random string id
+            const newRecord = { ...finalItemInput, id: Math.random().toString(36).slice(2) };
             updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
             setRecords(updatedRecords);
           }
@@ -773,8 +771,8 @@ const VSIRModule: React.FC = () => {
           console.error('[VSIR] Error persisting VSIR to Firestore:', err);
         }
       } else {
-        // Not logged in: just add with a random id
-        const newRecord = { ...finalItemInput, id: Date.now() };
+        // Not logged in: just add with a random string id
+        const newRecord = { ...finalItemInput, id: Math.random().toString(36).slice(2) };
         updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
         setRecords(updatedRecords);
       }
