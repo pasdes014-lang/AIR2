@@ -534,7 +534,7 @@ const VendorIssueModule: React.FC = () => {
         })) : [];
 
         // Skip if PO quantity is 0
-        const totalQty = items.reduce((sum, item) => sum + (item.qty || 0), 0);
+        const totalQty = items.reduce((sum: number, item: any) => sum + (item.qty || 0), 0);
         if (totalQty === 0) {
           console.debug('[VendorIssueModule][AutoImportVendorDept] Skipping order', order.materialPurchasePoNo, '- Total quantity is 0');
           return;
