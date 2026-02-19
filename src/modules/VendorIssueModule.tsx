@@ -946,9 +946,45 @@ const VendorIssueModule: React.FC = () => {
     }
   };
 
+  // Debug panel state
+  const [showDebug, setShowDebug] = useState(false);
+  // Collect debug info for plannedQty/Qty filling
+  const debugInfo: string[] = [];
+  if (newIssue.materialPurchasePoNo) {
+    const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
+    if (!match) {
+      debugInfo.push(`No Vendor Dept order found for PO: ${newIssue.materialPurchasePoNo}`);
+    } else if (!Array.isArray(match.items) || match.items.length === 0) {
+      debugInfo.push(`Vendor Dept order for PO ${newIssue.materialPurchasePoNo} has no items.`);
+    } else {
+      match.items.forEach((item: any, idx: number) => {
+        const plannedQty = item.plannedQty;
+        const fallbackQty = item.qty || 0;
+        if (typeof plannedQty === 'number') {
+          debugInfo.push(`Item[${idx}] ${item.itemName} (${item.itemCode}): plannedQty=${plannedQty} (used)`);
+        } else {
+          debugInfo.push(`Item[${idx}] ${item.itemName} (${item.itemCode}): plannedQty not found, using qty=${fallbackQty}`);
+        }
+      });
+    }
+  } else {
+    debugInfo.push('No Material Purchase PO No selected.');
+  }
+
   return (
     <div>
       <h2>Vendor Issue Module</h2>
+      <button onClick={() => setShowDebug(d => !d)} style={{ marginBottom: 8, background: '#eee', border: '1px solid #ccc', borderRadius: 4, padding: '4px 12px', cursor: 'pointer' }}>
+        {showDebug ? 'Hide Debug Panel' : 'Show Debug Panel'}
+      </button>
+      {showDebug && (
+        <div style={{ background: '#222', color: '#fff', padding: 12, borderRadius: 6, marginBottom: 16, fontSize: 13 }}>
+          <strong>Debug Info (Qty/PlannedQty):</strong>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {debugInfo.map((msg, i) => <li key={i}>{msg}</li>)}
+          </ul>
+        </div>
+      )}
       <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
         <input
           type="date"
