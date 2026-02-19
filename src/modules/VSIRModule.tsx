@@ -740,25 +740,43 @@ const VSIRModule: React.FC = () => {
     if (existingIdx !== -1) {
       // Update existing
       updatedRecords = [...records];
-      updatedRecords[existingIdx] = { ...records[existingIdx], ...finalItemInput };
-    } else {
-      // Add new
-      updatedRecords = [...records, { ...finalItemInput, id: Date.now() }];
-    }
-    // Deduplicate before saving
-    updatedRecords = deduplicateVSIRRecords(updatedRecords);
-    setRecords(updatedRecords);
-
-    // Persist to Firestore
-    if (userUid) {
-      try {
-        if (existingIdx !== -1) {
-          await updateVSIRRecord(userUid, String(records[existingIdx].id), { ...records[existingIdx], ...finalItemInput });
-        } else {
-          await addVSIRRecord(userUid, { ...finalItemInput, id: Date.now() });
+      // Use the Firestore ID if present
+      const firestoreId = records[existingIdx].id;
+      updatedRecords[existingIdx] = { ...records[existingIdx], ...finalItemInput, id: firestoreId };
+      setRecords(deduplicateVSIRRecords(updatedRecords));
+      // Persist to Firestore
+      if (userUid && firestoreId) {
+        try {
+          await updateVSIRRecord(userUid, String(firestoreId), { ...records[existingIdx], ...finalItemInput, id: firestoreId });
+        } catch (err) {
+          console.error('[VSIR] Error persisting VSIR to Firestore:', err);
         }
-      } catch (err) {
-        console.error('[VSIR] Error persisting VSIR to Firestore:', err);
+      }
+    } else {
+      // Add new: use Firestore-generated ID
+      if (userUid) {
+        try {
+          const docRef = await addVSIRRecord(userUid, { ...finalItemInput });
+          // Firestore should return the new doc ref/id
+          const firestoreId = docRef?.id || (typeof docRef === 'string' ? docRef : undefined);
+          if (firestoreId) {
+            const newRecord = { ...finalItemInput, id: firestoreId };
+            updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
+            setRecords(updatedRecords);
+          } else {
+            // fallback: just add with a random id
+            const newRecord = { ...finalItemInput, id: Date.now() };
+            updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
+            setRecords(updatedRecords);
+          }
+        } catch (err) {
+          console.error('[VSIR] Error persisting VSIR to Firestore:', err);
+        }
+      } else {
+        // Not logged in: just add with a random id
+        const newRecord = { ...finalItemInput, id: Date.now() };
+        updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
+        setRecords(updatedRecords);
       }
     }
     // Do NOT reset form after submit, so values are held
