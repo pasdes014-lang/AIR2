@@ -602,14 +602,7 @@ const VendorDeptModule: React.FC = () => {
 					closingStock: getClosingStock(item.itemCode, item.itemName),
 					indentStatus: '',
 					receivedQty: 0,
-					okQty: 0,
-					reworkQty: 0,
-					rejectedQty: 0,
-					grnNo: item.grnNo || '',
-					debitNoteOrQtyReturned: '',
-					remarks: '',
-				}));
-				
+				okQty: undefined,
 				setNewOrder(prev => ({ ...prev, items: psirItems }));
 				console.log('[VendorDeptModule][AutoPopulate] Populated items from PSIR');
 			}
@@ -1378,14 +1371,7 @@ useEffect(() => {
 				qty: item.qty || 0,
 				indentStatus: (item.indentStatus || '').toUpperCase(),
 				receivedQty: 0,
-				okQty: item.okQty || 0,
-				reworkQty: item.reworkQty || 0,
-				rejectedQty: item.rejectedQty || 0,
-				grnNo: item.grnNo || '',
-				debitNoteOrQtyReturned: item.debitNoteOrQtyReturned || '',
-				remarks: item.remarks || '',
-			}));
-
+			okQty: undefined,
 			// Create and save the order to Firebase
 			const newOrder: VendorDeptOrder = {
 				orderPlaceDate: first?.orderPlaceDate || '',
@@ -2172,7 +2158,7 @@ const handleVSIRUpdate = (event?: any) => {
 						{indentStatusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
 					</select>
 					<input type="number" placeholder="Received Qty" value={itemInput.receivedQty || ''} onChange={e => setItemInput({ ...itemInput, receivedQty: Number(e.target.value) })} />
-					<input type="number" placeholder="OK Qty" value={itemInput.okQty || ''} onChange={e => setItemInput({ ...itemInput, okQty: Number(e.target.value) })} />
+					<input type="number" placeholder="OK Qty" value={itemInput.okQty || ''} disabled title="OK Qty is read-only and cannot be manually edited" />
 					<input type="number" placeholder="Rework Qty" value={itemInput.reworkQty || ''} onChange={e => setItemInput({ ...itemInput, reworkQty: Number(e.target.value) })} />
 					<input type="number" placeholder="Rejected Qty" value={itemInput.rejectedQty || ''} onChange={e => setItemInput({ ...itemInput, rejectedQty: Number(e.target.value) })} />
 					<input placeholder="GRN No" value={itemInput.grnNo} onChange={e => setItemInput({ ...itemInput, grnNo: e.target.value })} />
