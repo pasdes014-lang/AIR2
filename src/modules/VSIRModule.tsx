@@ -175,7 +175,7 @@ const VSIRModule: React.FC = () => {
       }
     };
     runAutoDelete();
-  }, [userUid, purchaseData, records]);
+  }, [userUid, purchaseData]);
 
 
         // subscribe to purchaseOrders in real-time (alternative source)
