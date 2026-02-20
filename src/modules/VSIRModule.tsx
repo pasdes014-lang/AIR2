@@ -136,10 +136,13 @@ const VSIRModule: React.FC = () => {
         // subscribe to VSIR records
         const unsubVSIR = subscribeVSIRRecords(uid, (docs) => {
           try {
+            console.log('[VSIR] VSIR subscription received', docs.length, 'raw docs');
             const dedupedDocs = deduplicateVSIRRecords(docs.map(d => ({ ...d })) as VSRIRecord[]);
+            console.log('[VSIR] After deduplication:', dedupedDocs.length, 'records');
             // Always update records to ensure latest values are held
             prevRecordsRef.current = dedupedDocs;
             setRecords(dedupedDocs);
+            console.log('[VSIR] Records state updated, current records count:', dedupedDocs.length);
           } catch (e) { console.error('[VSIR] Error mapping vsir docs', e); }
         });
 
@@ -301,7 +304,7 @@ const VSIRModule: React.FC = () => {
 
   // Sync vendor batch from VendorDept on update
   useEffect(() => {
-    const syncVendorBatchFromDept = () => {
+    const syncVendorBatchFromDept = async () => {
       try {
         console.log('[VSIR-DEBUG] ========== SYNC CHECK ==========');
         const vendorDepts = vendorDeptOrders || [];
@@ -316,11 +319,11 @@ const VSIRModule: React.FC = () => {
         const updatedRecords = records.map(record => {
           const hasEmptyVendorBatchNo = !record.vendorBatchNo || !String(record.vendorBatchNo).trim();
           const hasPoNo = !!record.poNo;
-          // ONLY sync vendorBatchNo if invoiceDcNo is manually entered (prerequisite check)
+          // Sync vendorBatchNo if PO No is present (removed invoiceDcNo prerequisite)
           const hasInvoiceDcNo = record.invoiceDcNo && String(record.invoiceDcNo).trim();
           console.log(`[VSIR-DEBUG] Record ${record.poNo || 'NO-PO'}: hasEmptyVendorBatchNo=${hasEmptyVendorBatchNo}, hasPoNo=${hasPoNo}, hasInvoiceDcNo=${hasInvoiceDcNo}`);
           
-          if (hasEmptyVendorBatchNo && hasPoNo && hasInvoiceDcNo) {
+          if (hasEmptyVendorBatchNo && hasPoNo) {
             const match = vendorDepts.find((vd: any) => {
               const poMatch = String(vd.materialPurchasePoNo || '').trim() === String(record.poNo || '').trim();
               console.log(`[VSIR-DEBUG]   Comparing: "${vd.materialPurchasePoNo}" === "${record.poNo}" ? ${poMatch}`);
@@ -328,14 +331,12 @@ const VSIRModule: React.FC = () => {
             });
             
             if (match?.vendorBatchNo) {
-              console.log(`[VSIR-DEBUG] ✓ SYNC: Found match for PO ${record.poNo}, Invoice/DC No present, syncing vendorBatchNo: ${match.vendorBatchNo}`);
+              console.log(`[VSIR-DEBUG] ✓ SYNC: Found match for PO ${record.poNo}, syncing vendorBatchNo: ${match.vendorBatchNo}`);
               updated = true;
               return { ...record, vendorBatchNo: match.vendorBatchNo };
             } else {
               console.log(`[VSIR-DEBUG] ✗ No matching VendorDept record found for PO ${record.poNo}`);
             }
-          } else if (!hasInvoiceDcNo && hasEmptyVendorBatchNo) {
-            console.log(`[VSIR-DEBUG] ✗ Skipping vendorBatchNo sync - Invoice/DC No not entered yet`);
           }
           return record;
         });
@@ -343,6 +344,16 @@ const VSIRModule: React.FC = () => {
         if (updated) {
           console.log('[VSIR-DEBUG] ✓ Records updated, persisting');
           console.log('[VSIR-DEBUG] Updated records:', updatedRecords.map(r => ({ poNo: r.poNo, vendorBatchNo: r.vendorBatchNo, invoiceDcNo: r.invoiceDcNo })));
+          // Persist each updated record to Firestore
+          if (userUid) {
+            for (const record of updatedRecords) {
+              if (record.id) {
+                await updateVSIRRecord(userUid, record.id, record);
+              }
+            }
+          } else {
+            console.log('[VSIR-DEBUG] Cannot persist - user not authenticated');
+          }
           setRecords(updatedRecords);
         } else {
           console.log('[VSIR-DEBUG] No records needed updating');
@@ -752,16 +763,21 @@ const VSIRModule: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
 
+    console.log('[VSIR] handleSubmit called with itemInput:', itemInput);
+
     if (!itemInput.receivedDate || !itemInput.poNo || !itemInput.itemCode || !itemInput.itemName || itemInput.qtyReceived === 0) {
+      console.log('[VSIR] Validation failed - missing required fields');
       alert('All required fields must be filled');
       return;
     }
 
     if (!userUid) {
+      console.log('[VSIR] Validation failed - user not authenticated');
       alert('User not authenticated');
       return;
     }
 
+    console.log('[VSIR] Validation passed, proceeding with save');
     setIsSubmitting(true);
 
     try {
@@ -771,21 +787,34 @@ const VSIRModule: React.FC = () => {
         let vb = getVendorBatchNoForPO(finalItemInput.poNo);
         if (!vb) vb = '';
         finalItemInput.vendorBatchNo = vb;
+        console.log('[VSIR] Updated vendorBatchNo from PO:', vb);
       } else if (!hasInvoiceDcNo) {
         finalItemInput.vendorBatchNo = '';
       }
 
+      console.log('[VSIR] Final data to save:', finalItemInput);
+
       if (editIdx !== null) {
+        console.log('[VSIR] Updating existing record at index:', editIdx);
         const record = records[editIdx];
-        if (!record || !record.id) throw new Error('Invalid record');
+        if (!record || !record.id) {
+          throw new Error('Invalid record for update');
+        }
+        console.log('[VSIR] Updating record:', record.id);
         await updateVSIRRecord(userUid, String(record.id), { ...record, ...finalItemInput, id: record.id });
+        console.log('[VSIR] Update successful');
+        setSuccessMessage('Record updated successfully!');
       } else {
+        console.log('[VSIR] Adding new record');
         await addVSIRRecord(userUid, finalItemInput);
+        console.log('[VSIR] Add successful');
+        setSuccessMessage('Record added successfully!');
       }
     } catch (e) {
-      console.error('[VSIR] Error:', e);
+      console.error('[VSIR] Error during save:', e);
       alert('Error: ' + String(e));
     } finally {
+      console.log('[VSIR] Clearing form after save attempt');
       setIsSubmitting(false);
       setItemInput(initialItemInput);
       setEditIdx(null);
