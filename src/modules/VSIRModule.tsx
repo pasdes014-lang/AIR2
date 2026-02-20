@@ -73,15 +73,6 @@ const VSIRModule: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<any>({});
   const [showDebugPanel, setShowDebugPanel] = useState<boolean>(false);
 
-  // Clear success message after 3 seconds
-  useEffect(() => {
-    if (successMessage) {
-      const timer = setTimeout(() => setSuccessMessage(''), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [successMessage]);
-
-
   const [itemInput, setItemInput] = useState<Omit<VSRIRecord, 'id'>>({
     receivedDate: '',
     indentNo: '',
@@ -101,6 +92,19 @@ const VSIRModule: React.FC = () => {
     grnNo: '',
     remarks: '',
   });
+
+  // Clear success message after 3 seconds
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(''), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
+
+  // Debug: Monitor itemInput changes
+  useEffect(() => {
+    console.log('[VSIR-DEBUG] itemInput state changed:', itemInput);
+  }, [itemInput]);
   // Track existing PO+ItemCode combinations to prevent duplicates during import
   const existingCombinationsRef = useRef<Set<string>>(new Set());
   // Ref to track previous records to prevent unnecessary re-renders
@@ -659,18 +663,28 @@ const VSIRModule: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
+    console.log('[VSIR] handleChange called:', name, '=', value, 'type:', type);
+
     if (name === 'itemName') {
       const found = itemMaster.find(item => item.itemName === value);
-      setItemInput(prev => ({
-        ...prev,
-        itemName: value,
-        itemCode: found ? found.itemCode : '',
-      }));
+      setItemInput(prev => {
+        const newState = {
+          ...prev,
+          itemName: value,
+          itemCode: found ? found.itemCode : '',
+        };
+        console.log('[VSIR] Updated itemInput (itemName change):', newState);
+        return newState;
+      });
     } else {
-      setItemInput(prev => ({
-        ...prev,
-        [name]: type === 'number' ? Number(value) : value,
-      }));
+      setItemInput(prev => {
+        const newState = {
+          ...prev,
+          [name]: type === 'number' ? Number(value) : value,
+        };
+        console.log('[VSIR] Updated itemInput (field change):', newState);
+        return newState;
+      });
     }
   };
 
@@ -732,6 +746,8 @@ const VSIRModule: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log('[VSIR] handleSubmit called with itemInput:', itemInput);
+    console.log('[VSIR] Form event:', e);
+    console.log('[VSIR] Current itemInput state before submission:', itemInput);
 
     // Initialize debug info
     const debugData: any = {
@@ -751,6 +767,7 @@ const VSIRModule: React.FC = () => {
 
     try {
       debugData.steps.push('Starting submission process');
+      console.log('[VSIR] Starting submission process, itemInput state:', itemInput);
 
       // Check if user is authenticated
       if (!userUid) {
@@ -879,12 +896,15 @@ const VSIRModule: React.FC = () => {
 
       // Do NOT reset form after submit, so values are held
       console.log('[VSIR] handleSubmit completed');
+      console.log('[VSIR] Final itemInput state after submission:', itemInput);
       debugData.steps.push('Submission process completed');
       debugData.isSubmitting = false;
       setDebugInfo({ ...debugData });
 
     } finally {
       setIsSubmitting(false);
+      console.log('[VSIR] handleSubmit finally block executed, isSubmitting set to false');
+      console.log('[VSIR] itemInput state in finally:', itemInput);
     }
   };
 
