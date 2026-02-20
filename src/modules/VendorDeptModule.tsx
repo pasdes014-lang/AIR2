@@ -548,9 +548,14 @@ const VendorDeptModule: React.FC = () => {
 			
 			// Find matching VSIR record for this PO and item (robust: trim, uppercase)
 			const norm = (v: any) => (v === undefined || v === null) ? '' : String(v).trim().toUpperCase();
+			const targetPO = norm(newOrder.materialPurchasePoNo);
+			const targetItem = norm(itemInput.itemCode);
+			console.log('[VendorDept][AutoFill] Looking for VSIR match: PO="' + targetPO + '" Item="' + targetItem + '"');
+			console.log('[VendorDept][AutoFill] Available VSIR records:', vsirRecords.map(r => ({ poNo: r.poNo, itemCode: r.itemCode })));
+			
 			const matchingVSIR = vsirRecords.find((vsir: any) =>
-				norm(vsir.poNo) === norm(newOrder.materialPurchasePoNo) &&
-				norm(vsir.itemCode) === norm(itemInput.itemCode)
+				norm(vsir.poNo) === targetPO &&
+				norm(vsir.itemCode) === targetItem
 			);
 			
 						if (matchingVSIR) {
