@@ -71,6 +71,126 @@ const VSIRModule: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  // Debug panel function
+  const showDebugPanel = () => {
+    console.group('🔍 VSIR DEBUG PANEL');
+    console.log('📅 Timestamp:', new Date().toISOString());
+    console.log('👤 User UID:', userUid);
+    console.log('🔢 Is Initialized:', isInitialized);
+    console.log('📝 Is Submitting:', isSubmitting);
+    console.log('✏️ Edit Index:', editIdx);
+    
+    console.group('📋 Current Form State (itemInput)');
+    Object.entries(itemInput).forEach(([key, value]) => {
+      console.log(`  ${key}:`, value, `(type: ${typeof value})`);
+    });
+    console.groupEnd();
+    
+    console.group('🏭 VendorDept Records');
+    console.log('Count:', vendorDeptOrders.length);
+    vendorDeptOrders.forEach((vd, index) => {
+      console.log(`Record ${index + 1}:`, {
+        id: vd.id,
+        materialPurchasePoNo: vd.materialPurchasePoNo,
+        vendorBatchNo: vd.vendorBatchNo,
+        allKeys: Object.keys(vd),
+        raw: vd
+      });
+    });
+    console.groupEnd();
+    
+    console.group('📦 VSIR Records');
+    console.log('Count:', records.length);
+    records.forEach((record, index) => {
+      console.log(`Record ${index + 1}:`, {
+        id: record.id,
+        poNo: record.poNo,
+        vendorBatchNo: record.vendorBatchNo,
+        invoiceDcNo: record.invoiceDcNo,
+        itemCode: record.itemCode,
+        hasEmptyVendorBatch: !record.vendorBatchNo || !String(record.vendorBatchNo).trim(),
+        raw: record
+      });
+    });
+    console.groupEnd();
+    
+    console.group('🔄 Sync Analysis');
+    let syncableRecords = 0;
+    let syncedRecords = 0;
+    let failedRecords = 0;
+    
+    records.forEach((record, index) => {
+      const hasEmptyVendorBatchNo = !record.vendorBatchNo || !String(record.vendorBatchNo).trim();
+      const hasPoNo = !!record.poNo;
+      const hasInvoiceDcNo = record.invoiceDcNo && String(record.invoiceDcNo).trim();
+      
+      const match = hasPoNo ? vendorDeptOrders.find(vd => 
+        String(vd.materialPurchasePoNo || '').trim() === String(record.poNo || '').trim()
+      ) : null;
+      
+      const canSync = hasEmptyVendorBatchNo && hasPoNo && match?.vendorBatchNo;
+      
+      if (canSync) syncableRecords++;
+      if (!hasEmptyVendorBatchNo) syncedRecords++;
+      if (hasPoNo && !match) failedRecords++;
+      
+      console.log(`Record ${index + 1} (${record.poNo || 'NO-PO'}):`, {
+        hasEmptyVendorBatchNo,
+        hasPoNo,
+        hasInvoiceDcNo,
+        matchFound: !!match,
+        vendorBatchAvailable: match?.vendorBatchNo ? true : false,
+        canSync,
+        status: canSync ? '🔄 READY TO SYNC' : hasEmptyVendorBatchNo ? '⏳ WAITING' : '✅ SYNCED'
+      });
+    });
+    
+    console.log('📊 Sync Summary:', {
+      totalRecords: records.length,
+      syncableRecords,
+      syncedRecords,
+      failedRecords,
+      vendorDeptRecords: vendorDeptOrders.length
+    });
+    console.groupEnd();
+    
+    console.group('⚙️ Module State');
+    console.log('Auto Delete Enabled:', autoDeleteEnabled);
+    console.log('Auto Import Enabled:', autoImportEnabled);
+    console.log('Success Message:', successMessage);
+    console.log('Item Names Count:', itemNames.length);
+    console.log('Item Master Count:', itemMaster.length);
+    console.log('Vendor Issues Count:', vendorIssues.length);
+    console.log('Purchase Data Count:', purchaseData.length);
+    console.log('Purchase Orders Count:', purchaseOrders.length);
+    console.log('PSIR Data Count:', psirData.length);
+    console.groupEnd();
+    
+    console.group('🚨 Recent Errors/Warnings');
+    // Add any recent errors here if tracked
+    console.log('No recent errors tracked');
+    console.groupEnd();
+    
+    console.groupEnd();
+  };
+
+  // Make debug panel available globally for easy access
+  useEffect(() => {
+    (window as any).vsirDebug = showDebugPanel;
+    console.log('🔧 VSIR Debug Panel available! Run vsirDebug() in console or press Ctrl+Shift+D to view current state.');
+    
+    // Add keyboard shortcut for debug panel
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        showDebugPanel();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [itemInput, vendorDeptOrders, records, userUid, isInitialized, isSubmitting, editIdx, autoDeleteEnabled, autoImportEnabled, successMessage]);
+
   const initialItemInput: Omit<VSRIRecord, 'id'> = {
     receivedDate: '',
     indentNo: '',
@@ -911,6 +1031,20 @@ const VSIRModule: React.FC = () => {
           <input type="checkbox" checked={autoImportEnabled} onChange={e => setAutoImportEnabled(e.target.checked)} />
           Enable Auto-Import (dangerous)
         </label>
+        <button 
+          onClick={showDebugPanel}
+          style={{ 
+            padding: '6px 12px', 
+            background: '#2196f3', 
+            color: '#fff', 
+            border: 'none', 
+            borderRadius: 4, 
+            cursor: 'pointer',
+            fontSize: '12px'
+          }}
+        >
+          🔍 Debug Panel
+        </button>
       </div>
       {successMessage && (
         <div style={{ 
