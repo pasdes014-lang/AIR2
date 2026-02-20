@@ -78,6 +78,8 @@ const VSIRModule: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [successMessage]);
+
+
   const [itemInput, setItemInput] = useState<Omit<VSRIRecord, 'id'>>({
     receivedDate: '',
     indentNo: '',
@@ -832,7 +834,7 @@ const VSIRModule: React.FC = () => {
   } finally {
     setIsSubmitting(false);
   }
-
+  };
 
   return (
     <div>
