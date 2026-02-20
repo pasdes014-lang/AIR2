@@ -27,6 +27,23 @@ interface VSRIRecord {
   remarks: string;
 }
 
+interface VendorDeptItem {
+  itemName: string;
+  itemCode: string;
+  materialIssueNo: string;
+  qty: number;
+  plannedQty?: number;
+  closingStock?: number | string;
+  indentStatus: string;
+  receivedQty: number;
+  okQty: number;
+  reworkQty: number;
+  rejectedQty: number;
+  grnNo: string;
+  debitNoteOrQtyReturned: string;
+  remarks: string;
+}
+
 interface Field {
   key: keyof Omit<VSRIRecord, 'id'>;
   label: string;
@@ -958,7 +975,7 @@ const VSIRModule: React.FC = () => {
 
           if (vendorDeptMatch && vendorDeptMatch.id) {
             // Find matching item within the Vendor Dept record
-            const itemIndex = vendorDeptMatch.items?.findIndex(item =>
+            const itemIndex = vendorDeptMatch.items?.findIndex((item: VendorDeptItem) =>
               String(item.itemCode || '').trim() === String(finalItemInput.itemCode || '').trim()
             );
 
