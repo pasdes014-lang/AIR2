@@ -2458,4 +2458,4 @@ const handleVSIRUpdate = (event?: any) => {
 		</div>
 	);
 };
-export default VendorDeptModule;
+export default VendorDeptModule; 
