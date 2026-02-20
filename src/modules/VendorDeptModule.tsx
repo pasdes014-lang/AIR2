@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import bus from '../utils/eventBus';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
-import { getPurchaseOrders, getPurchaseData, subscribeVendorDepts, addVendorDept, updateVendorDept, deleteVendorDept, getVSIRRecords } from '../utils/firestoreServices';
+import { getPurchaseOrders, getPurchaseData, subscribeVendorDepts, addVendorDept, updateVendorDept, deleteVendorDept } from '../utils/firestoreServices';
 import { subscribeVSIRRecords } from '../utils/firestoreServices';
 import { subscribePsirs } from '../utils/psirService';
 
@@ -369,17 +369,6 @@ const VendorDeptModule: React.FC = () => {
 					setPurchaseData(purchaseDataData);
 					console.debug('[VendorDeptModule] Loaded', purchaseDataData.length, 'purchase data records');
 				}
-
-				// Also load VSIR records once during initial load to ensure availability
-				try {
-					const vsirList = await getVSIRRecords(userUid);
-					if (Array.isArray(vsirList)) {
-						setVsirRecords(vsirList);
-						console.debug('[VendorDeptModule] getVSIRRecords loaded', vsirList.length, 'records');
-					}
-				} catch (e) {
-					console.error('[VendorDeptModule] getVSIRRecords failed:', e);
-				}
 			} catch (e) {
 				console.error('[VendorDeptModule] Error loading purchase data:', e);
 			}
@@ -404,21 +393,6 @@ const VendorDeptModule: React.FC = () => {
 			if (unsub) unsub();
 		};
 	}, [userUid]);
-
-	// Listen for VSIR updates from VSIRModule (event bus) as a fallback
-	useEffect(() => {
-		const handler = (ev: any) => {
-			try {
-				const records = ev?.detail?.records;
-				if (Array.isArray(records)) {
-					console.debug('[VendorDeptModule] Received vsir.updated event, records:', records.length);
-					setVsirRecords(records);
-				}
-			} catch (e) { console.error('[VendorDeptModule] Error handling vsir.updated event', e); }
-		};
-		bus.addEventListener('vsir.updated', handler);
-		return () => bus.removeEventListener('vsir.updated', handler);
-	}, []);
 
 	// Subscribe to PSIR records from Firestore
 	useEffect(() => {
