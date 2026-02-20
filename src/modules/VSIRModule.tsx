@@ -717,12 +717,20 @@ const VSIRModule: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[VSIR] handleSubmit called with itemInput:', itemInput);
+
+    // Check if user is authenticated
+    if (!userUid) {
+      alert('You must be logged in to save VSIR records.');
+      console.log('[VSIR] ❌ Not authenticated, cannot save');
+      return;
+    }
 
     let finalItemInput = { ...itemInput };
 
     // Vendor Batch No should ONLY be populated if invoiceDcNo is manually entered (prerequisite)
     const hasInvoiceDcNo = finalItemInput.invoiceDcNo && String(finalItemInput.invoiceDcNo).trim();
-    
+
     if (hasInvoiceDcNo && !finalItemInput.vendorBatchNo?.trim() && finalItemInput.poNo) {
       let vb = getVendorBatchNoForPO(finalItemInput.poNo);
       if (!vb) {
@@ -736,15 +744,17 @@ const VSIRModule: React.FC = () => {
       finalItemInput.vendorBatchNo = '';
     }
 
-    if (hasInvoiceDcNo && !finalItemInput.vendorBatchNo?.trim()) {
-      alert('⚠️ Vendor Batch No could not be determined from VendorDept. Please save a VendorDept order for this PO first.');
-      return;
-    }
-
+    // Remove the strict validation that prevents saving
+    // if (hasInvoiceDcNo && !finalItemInput.vendorBatchNo?.trim()) {
+    //   alert('⚠️ Vendor Batch No could not be determined from VendorDept. Please save a VendorDept order for this PO first.');
+    //   return;
+    // }
     // Add or update record in local state
     let updatedRecords: VSRIRecord[];
     const key = makeKey(finalItemInput.poNo, finalItemInput.itemCode);
     const existingIdx = records.findIndex(r => makeKey(r.poNo, r.itemCode) === key);
+    console.log('[VSIR] Existing record index:', existingIdx, 'key:', key);
+
     if (existingIdx !== -1) {
       // Update existing
       updatedRecords = [...records];
@@ -752,33 +762,47 @@ const VSIRModule: React.FC = () => {
       const firestoreId = records[existingIdx].id;
       updatedRecords[existingIdx] = { ...records[existingIdx], ...finalItemInput, id: firestoreId };
       setRecords(deduplicateVSIRRecords(updatedRecords));
+      console.log('[VSIR] Updating existing record with ID:', firestoreId);
       // Persist to Firestore
       if (userUid && firestoreId) {
         try {
+          console.log('[VSIR] Calling updateVSIRRecord...');
           await updateVSIRRecord(userUid, String(firestoreId), { ...records[existingIdx], ...finalItemInput, id: firestoreId });
+          console.log('[VSIR] ✓ Successfully updated VSIR record in Firestore');
+          alert('VSIR record updated successfully!');
         } catch (err) {
           console.error('[VSIR] Error persisting VSIR to Firestore:', err);
+          alert('Error updating VSIR record: ' + (err as any)?.message || 'Unknown error');
         }
       }
     } else {
       // Add new: use Firestore-generated ID
+      console.log('[VSIR] Adding new record...');
       if (userUid) {
         try {
+          console.log('[VSIR] Calling addVSIRRecord...');
           const firestoreId = await addVSIRRecord(userUid, { ...finalItemInput });
+          console.log('[VSIR] ✓ addVSIRRecord returned ID:', firestoreId);
           if (firestoreId) {
             const newRecord = { ...finalItemInput, id: firestoreId };
             updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
             setRecords(updatedRecords);
+            console.log('[VSIR] ✓ New record added to state with ID:', firestoreId);
+            alert('VSIR record added successfully!');
           } else {
             // fallback: just add with a random string id
             const newRecord = { ...finalItemInput, id: Math.random().toString(36).slice(2) };
             updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
             setRecords(updatedRecords);
+            console.log('[VSIR] ⚠️ Fallback: Added record with random ID');
+            alert('VSIR record added locally (not saved to cloud)');
           }
         } catch (err) {
           console.error('[VSIR] Error persisting VSIR to Firestore:', err);
+          alert('Error adding VSIR record: ' + (err as any)?.message || 'Unknown error');
         }
       } else {
+        console.log('[VSIR] ⚠️ No userUid, adding record locally only');
         // Not logged in: just add with a random string id
         const newRecord = { ...finalItemInput, id: Math.random().toString(36).slice(2) };
         updatedRecords = deduplicateVSIRRecords([...records, newRecord]);
@@ -786,6 +810,7 @@ const VSIRModule: React.FC = () => {
       }
     }
     // Do NOT reset form after submit, so values are held
+    console.log('[VSIR] handleSubmit completed');
   };
 
 
@@ -801,6 +826,9 @@ const VSIRModule: React.FC = () => {
           <input type="checkbox" checked={autoImportEnabled} onChange={e => setAutoImportEnabled(e.target.checked)} />
           Enable Auto-Import (dangerous)
         </label>
+      </div>
+      <div style={{ marginBottom: 16, color: 'red' }}>
+        Debug: userUid = {userUid || 'null'}, records count = {records.length}
       </div>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
         {VSRI_MODULE_FIELDS.map((field) => (
