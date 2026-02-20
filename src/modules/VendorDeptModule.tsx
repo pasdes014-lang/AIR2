@@ -394,6 +394,21 @@ const VendorDeptModule: React.FC = () => {
 		};
 	}, [userUid]);
 
+	// Listen for VSIR updates from VSIRModule (event bus) as a fallback
+	useEffect(() => {
+		const handler = (ev: any) => {
+			try {
+				const records = ev?.detail?.records;
+				if (Array.isArray(records)) {
+					console.debug('[VendorDeptModule] Received vsir.updated event, records:', records.length);
+					setVsirRecords(records);
+				}
+			} catch (e) { console.error('[VendorDeptModule] Error handling vsir.updated event', e); }
+		};
+		bus.addEventListener('vsir.updated', handler);
+		return () => bus.removeEventListener('vsir.updated', handler);
+	}, []);
+
 	// Subscribe to PSIR records from Firestore
 	useEffect(() => {
 		let unsub: (() => void) | null = null;
