@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -252,6 +251,8 @@ const VSIRModule: React.FC = () => {
   const prevRecordsRef = useRef<VSRIRecord[]>([]);
   // Ref to bypass merge after save
   const justSavedRef = useRef(false);
+  // *** FIX Bug 2&3: store the exact qty data we saved so the subscription merge uses it, not stale prev state ***
+  const lastSavedDataRef = useRef<{ id: string; okQty: number; reworkQty: number; rejectQty: number; qtyReceived: number } | null>(null);
   // Helper: create a composite key for deduplication
   const makeKey = (poNo: string, itemCode: string) => `${String(poNo).trim().toLowerCase()}|${String(itemCode).trim().toLowerCase()}`;
   // Helper: deduplicate VSIR records by poNo+itemCode (keep latest occurrence)
@@ -292,34 +293,46 @@ const VSIRModule: React.FC = () => {
             const dedupedDocs = deduplicateVSIRRecords(docs.map(d => ({ ...d })) as VSRIRecord[]);
             console.log('[VSIR] After deduplication:', dedupedDocs.length, 'records');
             
-            // Check if we just saved - if so, use fresh data without merge
-            if (justSavedRef.current) {
-              justSavedRef.current = false;
-              console.log('[VSIR] Just saved - using fresh docs without merge');
-              prevRecordsRef.current = dedupedDocs;
-              setRecords(dedupedDocs);
-              return;
-            }
-            
-            // Merge strategy: preserve locally edited qty fields from previous state
             setRecords(prev => {
               if (!prev || prev.length === 0) {
                 console.log('[VSIR] No previous state, using fresh docs');
                 prevRecordsRef.current = dedupedDocs;
                 return dedupedDocs;
               }
-              
-              // Build map of record IDs to preserve qty values
-              const map = new Map(prev.map(r => [r.id, r]));
-              
-              // Merge: keep locally edited qtys from prev state
-              const merged = dedupedDocs.map(doc => ({
-                ...doc,
-                okQty: map.get(doc.id)?.okQty ?? doc.okQty,
-                reworkQty: map.get(doc.id)?.reworkQty ?? doc.reworkQty,
-                rejectQty: map.get(doc.id)?.rejectQty ?? doc.rejectQty,
-              }));
-              
+
+              // *** FIX Bug 2&3: build merge map from prev BUT for the record we just saved,
+              //     trust Firestore data fully instead of preserving stale prev qty values.
+              //     justSavedRef stays true across BOTH Firestore snapshots (optimistic + confirmed). ***
+              const prevMap = new Map(prev.map(r => [r.id, r]));
+
+              const merged = dedupedDocs.map(doc => {
+                const prevRec = prevMap.get(doc.id);
+
+                // If this is the record we just saved, use fresh Firestore data — don't merge stale prev
+                if (justSavedRef.current && lastSavedDataRef.current?.id === doc.id) {
+                  console.log('[VSIR] Just-saved record detected — using Firestore data for id:', doc.id, 'okQty:', doc.okQty, 'reworkQty:', doc.reworkQty, 'rejectQty:', doc.rejectQty);
+                  return doc;
+                }
+
+                if (!prevRec) return doc;
+
+                // For all other records, preserve locally edited qty in case user is mid-edit
+                return {
+                  ...doc,
+                  okQty: prevRec.okQty ?? doc.okQty,
+                  reworkQty: prevRec.reworkQty ?? doc.reworkQty,
+                  rejectQty: prevRec.rejectQty ?? doc.rejectQty,
+                  qtyReceived: prevRec.qtyReceived ?? doc.qtyReceived,
+                };
+              });
+
+              // Clear justSaved after processing — handles both single and double Firestore snapshots
+              if (justSavedRef.current) {
+                justSavedRef.current = false;
+                lastSavedDataRef.current = null;
+                console.log('[VSIR] justSaved cleared after merge');
+              }
+
               prevRecordsRef.current = merged;
               console.log('[VSIR] Merged snapshot with preserved qty values');
               return merged;
@@ -996,11 +1009,15 @@ const VSIRModule: React.FC = () => {
     console.log('[VSIR] Operation mode:', editIdx !== null ? 'UPDATE (editIdx=' + editIdx + ')' : 'ADD (new record)');
     setIsSubmitting(true);
 
-    // Mark as just saved to bypass merge on next subscription
-    justSavedRef.current = true;
-
     try {
       const finalItemInput = { ...itemInput };
+
+      // *** FIX Bug 1: ensure all qty fields are proper numbers before saving ***
+      finalItemInput.qtyReceived = Number(finalItemInput.qtyReceived) || 0;
+      finalItemInput.okQty = Number(finalItemInput.okQty) || 0;
+      finalItemInput.reworkQty = Number(finalItemInput.reworkQty) || 0;
+      finalItemInput.rejectQty = Number(finalItemInput.rejectQty) || 0;
+
       const hasInvoiceDcNo = finalItemInput.invoiceDcNo && String(finalItemInput.invoiceDcNo).trim();
       if (hasInvoiceDcNo && !finalItemInput.vendorBatchNo?.trim() && finalItemInput.poNo) {
         let vb = getVendorBatchNoForPO(finalItemInput.poNo);
@@ -1020,11 +1037,26 @@ const VSIRModule: React.FC = () => {
           throw new Error('Invalid record for update');
         }
         console.log('[VSIR] Updating record:', record.id);
+
+        // *** FIX Bug 2&3: store saved qty in ref BEFORE the Firestore write.
+        //     The subscription merge checks this ref and skips stale-prev-merge for this record ID.
+        //     justSavedRef stays true across both Firestore snapshots (optimistic + confirmed). ***
+        justSavedRef.current = true;
+        lastSavedDataRef.current = {
+          id: record.id,
+          okQty: finalItemInput.okQty,
+          reworkQty: finalItemInput.reworkQty,
+          rejectQty: finalItemInput.rejectQty,
+          qtyReceived: finalItemInput.qtyReceived,
+        };
+
         await updateVSIRRecord(userUid, String(record.id), { ...record, ...finalItemInput, id: record.id });
-        console.log('[VSIR] Update successful');
+        console.log('[VSIR] Update successful - saved okQty:', finalItemInput.okQty, 'reworkQty:', finalItemInput.reworkQty, 'rejectQty:', finalItemInput.rejectQty);
         setSuccessMessage('Record updated successfully!');
       } else {
         console.log('[VSIR] Adding new record');
+        justSavedRef.current = true;
+        lastSavedDataRef.current = null; // new record — no ID yet, subscription will use fresh Firestore data
         await addVSIRRecord(userUid, finalItemInput);
         console.log('[VSIR] Add successful');
         setSuccessMessage('Record added successfully!');
@@ -1090,6 +1122,9 @@ const VSIRModule: React.FC = () => {
       }
     } catch (e) {
       console.error('[VSIR] Error during save:', e);
+      // *** FIX: clear refs on error so merge doesn't get confused ***
+      justSavedRef.current = false;
+      lastSavedDataRef.current = null;
       alert('Error: ' + String(e));
     } finally {
       console.log('[VSIR] Save attempt completed');
@@ -1231,10 +1266,13 @@ const VSIRModule: React.FC = () => {
                 ))}
               </select>
             ) : (
+              // *** FIX Bug 1: number inputs must use (value ?? 0) not (value || '') ***
+              // because 0 || '' = '' which makes React treat the input as uncontrolled,
+              // causing typed values to not bind correctly.
               <input
                 type={field.type}
                 name={field.key}
-                value={fieldValue || ''}
+                value={field.type === 'number' ? (fieldValue ?? 0) : (fieldValue || '')}
                 onChange={handleChange}
                 style={{ width: '100%', padding: 6, borderRadius: 4, border: '1px solid #bbb' }}
               />
