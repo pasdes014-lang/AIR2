@@ -2235,7 +2235,7 @@ const handleVSIRUpdate = (event?: any) => {
 																		<td>{item.plannedQty || '—'}</td>
 										<td>{item.indentStatus || '—'}</td>
 										<td>{item.receivedQty || '—'}</td>
-										<td>{item.okQty || '—'}</td>
+										<td>{typeof item.okQty === 'number' ? item.okQty : 0}</td>
 										<td>{item.reworkQty || '—'}</td>
 										<td>{item.rejectedQty || '—'}</td>
 										<td>{item.grnNo || '—'}</td>

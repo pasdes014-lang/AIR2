@@ -39,7 +39,7 @@ export const useUserRole = (user: User | null) => {
           setUserProfile(userDoc.data() as UserProfile);
         } else {
           // If user doc doesn't exist, create a default profile
-          const isSeededAdmin = user.uid === '4OzW9GTwokTOnza0A0e4DNclJ6H2';
+          const isSeededAdmin = user.uid === 'TcBiT0Jh46g5GktLxtqwh5Idcfk1';
           const defaultProfile: UserProfile = {
             email: user.email || '',
             role: isSeededAdmin ? 'admin' : 'viewer',

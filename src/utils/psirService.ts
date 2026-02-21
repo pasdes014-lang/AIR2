@@ -15,13 +15,13 @@ const sanitizePsirData = (data: any) => {
   if (!data || typeof data !== 'object') return data;
   const d: any = { ...data };
   if ('poQty' in d) d.poQty = normalizeQty(d.poQty);
-  if ('okQty' in d) delete d.okQty;
+  // Normalize okQty for each item
   if (Array.isArray(d.items)) {
     d.items = d.items.map((it: any) => {
       if (!it || typeof it !== 'object') return it;
       const copy = { ...it };
       if ('poQty' in copy) copy.poQty = normalizeQty(copy.poQty);
-      if ('okQty' in copy) delete copy.okQty;
+      if ('okQty' in copy) copy.okQty = normalizeQty(copy.okQty);
       return copy;
     });
   }
@@ -208,6 +208,7 @@ export const addPsir = async (uid: string, data: any) => {
 export const updatePsir = async (id: string, data: any) => {
   console.log('[psirService.updatePsir] Starting - id:', id, 'data:', data);
   const sanitized = sanitizePsirData(data);
+  console.log('[psirService.updatePsir] Sanitized data to save:', JSON.stringify(sanitized, null, 2));
   await updateDoc(doc(db, 'psirs', id), { ...sanitized, updatedAt: serverTimestamp() });
   console.log('[psirService.updatePsir] Success - updated ID:', id);
 };

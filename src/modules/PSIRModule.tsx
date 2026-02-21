@@ -714,15 +714,23 @@ const PSIRModule: React.FC = () => {
       alert('All fields are required, and at least one item must be added');
       return;
     }
-    
+
     let psirToSave = { ...newPSIR };
     if (!psirToSave.batchNo || psirToSave.batchNo.trim() === '') {
       console.log('[PSIR] handleUpdatePSIR - batchNo is empty, generating');
       psirToSave.batchNo = getNextBatchNo();
       console.log('[PSIR] handleUpdatePSIR - generated batchNo:', psirToSave.batchNo);
     }
-    
-    const updatedLocal = psirs.map((psir, idx) => (idx === editPSIRIdx ? { ...psirToSave, items: psirToSave.items.map(it => ({ ...it, poQty: getPOQtyFor(psirToSave.poNo, psirToSave.indentNo, it.itemCode) })) } : psir));
+
+    // Ensure okQty is included and log payload
+    psirToSave.items = psirToSave.items.map(it => ({
+      ...it,
+      poQty: getPOQtyFor(psirToSave.poNo, psirToSave.indentNo, it.itemCode),
+      okQty: Number(it.okQty) || 0
+    }));
+    console.log('[PSIR] Final data to save:', JSON.stringify(psirToSave, null, 2));
+
+    const updatedLocal = psirs.map((psir, idx) => (idx === editPSIRIdx ? psirToSave : psir));
 
     const target = psirs[editPSIRIdx!];
     const docId = target && (target as any).id;
@@ -730,15 +738,80 @@ const PSIRModule: React.FC = () => {
     if (userUid && docId) {
       (async () => {
         try {
+          // Log OK Qty values before saving
+          console.log('[PSIRModule] handleUpdatePSIR - OK Qty values:', psirToSave.items.map(it => it.okQty));
           await updatePsir(docId, { ...psirToSave, items: psirToSave.items.map(it => ({ ...it, poQty: getPOQtyFor(psirToSave.poNo, psirToSave.indentNo, it.itemCode) })) });
+          // Force subscription refresh after update
+          subscribePsirs(userUid, (docs) => {
+            setPsirs(
+              docs.map(d => ({
+                ...d,
+                items: Array.isArray(d.items) ? d.items : [],
+                receivedDate: d.receivedDate ?? '',
+                indentNo: d.indentNo ?? '',
+                poNo: d.poNo ?? '',
+                oaNo: d.oaNo ?? '',
+                batchNo: d.batchNo ?? '',
+                invoiceNo: d.invoiceNo ?? '',
+                supplierName: d.supplierName ?? '',
+                createdAt: d.createdAt ?? undefined,
+                updatedAt: d.updatedAt ?? undefined,
+                userId: d.userId ?? undefined,
+                // ...other PSIR fields as needed
+              }) as PSIR)
+            );
+            console.log('[PSIRModule] Forced subscription refresh after update');
+          });
         } catch (e) {
-          console.error('[PSIRModule] Failed to update PSIR in Firestore', e);
-          alert('Error updating in Firestore: ' + String(e));
+          const errorMsg = (e as any)?.message || String(e);
+          setPsirDebugOutput('Firestore update failed: ' + errorMsg);
+          setPsirDebugOpen(true);
+          alert('Error updating in Firestore: ' + errorMsg);
         }
       })();
     } else {
       setPsirs(updatedLocal);
-      try { bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: updatedLocal } })); } catch (err) {}
+      try {
+        bus.dispatchEvent(new CustomEvent('psir.updated', { detail: { psirs: updatedLocal } }));
+        // Force subscription refresh after local update
+        if (userUid) {
+          subscribePsirs(userUid, (docs) => {
+            setPsirs(
+              docs.map(d => ({
+                ...d,
+                items: Array.isArray(d.items) ? d.items : [],
+                receivedDate: d.receivedDate ?? '',
+                indentNo: d.indentNo ?? '',
+                poNo: d.poNo ?? '',
+                oaNo: d.oaNo ?? '',
+                batchNo: d.batchNo ?? '',
+                invoiceNo: d.invoiceNo ?? '',
+                supplierName: d.supplierName ?? '',
+                createdAt: d.createdAt ?? undefined,
+                updatedAt: d.updatedAt ?? undefined,
+                userId: d.userId ?? undefined,
+                // ...other PSIR fields as needed
+              }) as PSIR)
+            );
+            console.log('[PSIRModule] Forced subscription refresh after local update');
+          });
+        }
+      } catch (err) {
+        const errorMsg = (err as any)?.message || String(err);
+        setPsirDebugOutput('Local update failed: ' + errorMsg);
+        setPsirDebugOpen(true);
+        alert('Error saving PSIR update locally: ' + errorMsg);
+      }
+      // Show missing userUid/docId info
+      if (!userUid) {
+        setPsirDebugOutput('Save failed: userUid is missing. Please sign in.');
+        setPsirDebugOpen(true);
+        alert('Save failed: userUid is missing. Please sign in.');
+      } else if (!docId) {
+        setPsirDebugOutput('Save failed: PSIR record has no ID (docId).');
+        setPsirDebugOpen(true);
+        alert('Save failed: PSIR record has no ID (docId).');
+      }
     }
 
     setNewPSIR({ receivedDate: '', indentNo: '', poNo: '', oaNo: '', batchNo: '', invoiceNo: '', supplierName: '', items: [] });

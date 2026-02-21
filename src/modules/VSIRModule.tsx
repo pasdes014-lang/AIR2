@@ -25,6 +25,7 @@ interface VSRIRecord {
   rejectQty: number;
   grnNo: string;
   remarks: string;
+  updatedAt?: string | number | Date;
 }
 
 interface VendorDeptItem {
@@ -181,6 +182,7 @@ const VSIRModule: React.FC = () => {
     console.log('Purchase Data Count:', purchaseData.length);
     console.log('Purchase Orders Count:', purchaseOrders.length);
     console.log('PSIR Data Count:', psirData.length);
+    console.log('Just Saved Flag:', justSavedRef.current);
     console.groupEnd();
     
     console.group('🚨 Recent Errors/Warnings');
@@ -248,6 +250,8 @@ const VSIRModule: React.FC = () => {
   const existingCombinationsRef = useRef<Set<string>>(new Set());
   // Ref to track previous records to prevent unnecessary re-renders
   const prevRecordsRef = useRef<VSRIRecord[]>([]);
+  // Ref to bypass merge after save
+  const justSavedRef = useRef(false);
   // Helper: create a composite key for deduplication
   const makeKey = (poNo: string, itemCode: string) => `${String(poNo).trim().toLowerCase()}|${String(itemCode).trim().toLowerCase()}`;
   // Helper: deduplicate VSIR records by poNo+itemCode (keep latest occurrence)
@@ -255,7 +259,17 @@ const VSIRModule: React.FC = () => {
     const map = new Map<string, VSRIRecord>();
     for (const rec of arr) {
       const key = makeKey(rec.poNo, rec.itemCode);
-      map.set(key, rec); // always keep the latest occurrence
+      if (!map.has(key)) {
+        map.set(key, rec);
+      } else {
+        // Compare updatedAt timestamps
+        const prev = map.get(key);
+        const prevUpdated = prev && prev.updatedAt ? new Date(prev.updatedAt).getTime() : 0;
+        const currUpdated = rec && rec.updatedAt ? new Date(rec.updatedAt).getTime() : 0;
+        if (currUpdated > prevUpdated) {
+          map.set(key, rec);
+        }
+      }
     }
     return Array.from(map.values());
   };
@@ -277,6 +291,15 @@ const VSIRModule: React.FC = () => {
             console.log('[VSIR] VSIR subscription received', docs.length, 'raw docs');
             const dedupedDocs = deduplicateVSIRRecords(docs.map(d => ({ ...d })) as VSRIRecord[]);
             console.log('[VSIR] After deduplication:', dedupedDocs.length, 'records');
+            
+            // Check if we just saved - if so, use fresh data without merge
+            if (justSavedRef.current) {
+              justSavedRef.current = false;
+              console.log('[VSIR] Just saved - using fresh docs without merge');
+              prevRecordsRef.current = dedupedDocs;
+              setRecords(dedupedDocs);
+              return;
+            }
             
             // Merge strategy: preserve locally edited qty fields from previous state
             setRecords(prev => {
@@ -955,6 +978,7 @@ const VSIRModule: React.FC = () => {
 
     console.log('[VSIR] handleSubmit called with itemInput:', itemInput);
     console.log('[VSIR] Current form state before validation:', itemInput);
+    console.log('[VSIR-DEBUG] editIdx at submit time:', editIdx);
 
     if (!itemInput.receivedDate || !itemInput.poNo || !itemInput.itemCode || !itemInput.itemName || itemInput.qtyReceived === 0) {
       console.log('[VSIR] Validation failed - missing required fields');
@@ -969,6 +993,7 @@ const VSIRModule: React.FC = () => {
     }
 
     console.log('[VSIR] Validation passed, proceeding with save');
+    console.log('[VSIR] Operation mode:', editIdx !== null ? 'UPDATE (editIdx=' + editIdx + ')' : 'ADD (new record)');
     setIsSubmitting(true);
 
     try {
@@ -1001,6 +1026,9 @@ const VSIRModule: React.FC = () => {
         console.log('[VSIR] Add successful');
         setSuccessMessage('Record added successfully!');
       }
+
+      // Mark as just saved to bypass merge on next subscription
+      justSavedRef.current = true;
 
       // Sync OK Qty to Vendor Dept (for both add and update operations)
       if (finalItemInput.okQty > 0 && finalItemInput.poNo && finalItemInput.itemCode) {
