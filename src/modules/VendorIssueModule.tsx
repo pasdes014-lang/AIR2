@@ -13,6 +13,7 @@ import {
   subscribeVSIRRecords,
   subscribePurchaseOrders,
 } from '../utils/firestoreServices';
+import { subscribePsirs } from '../utils/psirService'; // *** FIX: import PSIR subscription ***
 
 interface VendorIssueItem {
   itemName: string;
@@ -38,8 +39,6 @@ interface VendorIssue {
 
 const indentByOptions = ['HKG', 'NGR', 'MDD'];
 
-// VSIR lookup will use subscribed `vsirRecords` state inside the component
-
 function getNextIssueNo(issues: VendorIssue[]) {
   const base = 'ISS-';
   if (issues.length === 0) return base + '01';
@@ -54,19 +53,15 @@ function getNextIssueNo(issues: VendorIssue[]) {
 
 function getNextDCNo(issues: VendorIssue[]) {
   const prefix = 'Vendor/';
-  const nums = issues
-    .map(issue => {
-      const match = issue.dcNo && issue.dcNo.startsWith(prefix)
-        ? parseInt(issue.dcNo.replace(prefix, ''))
-        : 0;
-      return isNaN(match) ? 0 : match;
-    });
+  const nums = issues.map(issue => {
+    const match = issue.dcNo && issue.dcNo.startsWith(prefix) ? parseInt(issue.dcNo.replace(prefix, '')) : 0;
+    return isNaN(match) ? 0 : match;
+  });
   const maxNum = nums.length > 0 ? Math.max(...nums) : 0;
   return `${prefix}${String(maxNum + 1).padStart(2, '0')}`;
 }
 
 const VendorIssueModule: React.FC = () => {
-  // Move all useState declarations to the very top, before any useEffect
   const [issues, setIssues] = useState<VendorIssue[]>(() => {
     const saved = localStorage.getItem('vendorIssueData');
     if (!saved) return [];
@@ -78,12 +73,12 @@ const VendorIssueModule: React.FC = () => {
         vendorBatchNo: issue.vendorBatchNo || '',
         items: Array.isArray(issue.items) ? issue.items : [],
       }));
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   });
 
-  // Migrate existing localStorage `vendorIssueData` into Firestore on sign-in
+  // *** FIX: track PSIR data from Firestore subscription ***
+  const [psirData, setPsirData] = useState<any[]>([]);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       const uid = u ? u.uid : null;
@@ -104,12 +99,10 @@ const VendorIssueModule: React.FC = () => {
                     console.warn('[VendorIssueModule] migration addDoc failed for item', it, err);
                   }
                 }
-                    try { localStorage.removeItem('vendorIssueData'); } catch {}
+                try { localStorage.removeItem('vendorIssueData'); } catch {}
               }
             }
-          } catch (err) {
-            console.error('[VendorIssueModule] Migration failed:', err);
-          }
+          } catch (err) { console.error('[VendorIssueModule] Migration failed:', err); }
         })();
       }
     });
@@ -117,24 +110,12 @@ const VendorIssueModule: React.FC = () => {
   }, []);
 
   const [newIssue, setNewIssue] = useState<VendorIssue>({
-    date: '',
-    materialPurchasePoNo: '',
-    oaNo: '',
-    batchNo: '',
-    vendorBatchNo: '',
-    dcNo: '', // Initialize as empty, will be set by useEffect
-    issueNo: getNextIssueNo([]), // Use empty array to avoid referencing issues before init
-    vendorName: '',
-    items: [],
+    date: '', materialPurchasePoNo: '', oaNo: '', batchNo: '', vendorBatchNo: '',
+    dcNo: '', issueNo: getNextIssueNo([]), vendorName: '', items: [],
   });
 
   const [itemInput, setItemInput] = useState<VendorIssueItem>({
-    itemName: '',
-    itemCode: '',
-    qty: 0,
-    indentBy: '',
-    inStock: 0,
-    indentClosed: false,
+    itemName: '', itemCode: '', qty: 0, indentBy: '', inStock: 0, indentClosed: false,
   });
 
   const [itemNames, setItemNames] = useState<string[]>([]);
@@ -145,45 +126,43 @@ const VendorIssueModule: React.FC = () => {
   const [vsirRecords, setVsirRecords] = useState<any[]>([]);
   const [editIssueIdx, setEditIssueIdx] = useState<number | null>(null);
 
-  // Helper: deduplicate Vendor Issues by PO + Date + first item (to allow multiple issues per PO on different dates)
   const deduplicateVendorIssues = (arr: VendorIssue[]): VendorIssue[] => {
     const seen = new Set<string>();
     const deduped: VendorIssue[] = [];
     for (const issue of arr) {
-      const firstItemKey = issue.items && issue.items.length > 0 
-        ? `${issue.items[0].itemCode || issue.items[0].itemName}` 
-        : '';
+      const firstItemKey = issue.items && issue.items.length > 0 ? `${issue.items[0].itemCode || issue.items[0].itemName}` : '';
       const key = `${String(issue.materialPurchasePoNo || '').trim().toLowerCase()}|${issue.date}|${firstItemKey}`;
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        deduped.push(issue);
-      }
+      if (key && !seen.has(key)) { seen.add(key); deduped.push(issue); }
     }
     return deduped;
   };
 
-  // Helper: get vendor batch no from subscribed VSIR records
   const getVendorBatchNoFromVSIR = (poNo: any): string => {
     try {
       if (!poNo) return '';
       const poNoNormalized = String(poNo).trim();
       const match = vsirRecords.find((r: any) => String(r.poNo || '').trim() === poNoNormalized && r.vendorBatchNo && String(r.vendorBatchNo).trim());
       return match ? match.vendorBatchNo : '';
-    } catch (err) {
-      console.debug('[VendorIssueModule] Error getting vendorBatchNo from VSIR (state):', err);
-      return '';
-    }
+    } catch { return ''; }
   };
 
-  // Debug: Log vendorIssueData and vendorDeptData on mount
-  useEffect(() => {
-    const vendorIssueRaw = localStorage.getItem('vendorIssueData');
-    const vendorDeptRaw = localStorage.getItem('vendorDeptData');
-    console.debug('[VendorIssueModule][Debug] vendorIssueData(localStorage):', vendorIssueRaw);
-    console.debug('[VendorIssueModule][Debug] vendorDeptData(localStorage):', vendorDeptRaw);
-  }, []);
+  // *** FIX: helper to look up batchNo from PSIR data (Firestore-subscribed) ***
+  const getBatchNoFromPSIR = (poNo: string): string => {
+    try {
+      if (!poNo) return '';
+      const match = psirData.find((p: any) => String(p.poNo || '').trim() === String(poNo).trim());
+      return match ? (match.batchNo || '') : '';
+    } catch { return ''; }
+  };
 
-  // Auth + Firestore subscriptions
+  const getOaNoFromPSIR = (poNo: string): string => {
+    try {
+      if (!poNo) return '';
+      const match = psirData.find((p: any) => String(p.poNo || '').trim() === String(poNo).trim());
+      return match ? (match.oaNo || '') : '';
+    } catch { return ''; }
+  };
+
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => setUserUid(u ? u.uid : null));
     return () => unsubAuth();
@@ -194,43 +173,27 @@ const VendorIssueModule: React.FC = () => {
     let unsubVendorDepts: (() => void) | null = null;
     let unsubVsir: (() => void) | null = null;
     let unsubPurchaseOrders: (() => void) | null = null;
+    let unsubPsirs: (() => void) | null = null; // *** FIX ***
 
-    if (!userUid) {
-      // when not authenticated, keep using localStorage (existing behavior)
-      return () => {};
-    }
+    if (!userUid) return () => {};
 
+    try { unsubIssues = subscribeVendorIssues(userUid, (docs) => { const mapped = docs.map(d => ({ ...d, items: Array.isArray(d.items) ? d.items : [] })); setIssues(deduplicateVendorIssues(mapped as VendorIssue[])); }); } catch (err) { console.error('[VendorIssueModule] subscribeVendorIssues failed:', err); }
+    try { unsubVendorDepts = subscribeVendorDepts(userUid, (docs) => setVendorDeptOrders(docs)); } catch (err) { console.error('[VendorIssueModule] subscribeVendorDepts failed:', err); }
+    try { unsubVsir = subscribeVSIRRecords(userUid, (docs) => setVsirRecords(docs)); } catch (err) { console.error('[VendorIssueModule] subscribeVSIRRecords failed:', err); }
+    try { unsubPurchaseOrders = subscribePurchaseOrders(userUid, (docs) => setPurchaseOrders(docs || [])); } catch (err) { console.error('[VendorIssueModule] subscribePurchaseOrders failed:', err); }
+
+    // *** FIX: subscribe to PSIR from Firestore so batchNo is always available ***
     try {
-      unsubIssues = subscribeVendorIssues(userUid, (docs) => {
-        const mapped = docs.map(d => ({ ...d, items: Array.isArray(d.items) ? d.items : [] }));
-        const deduped = deduplicateVendorIssues(mapped as VendorIssue[]);
-        setIssues(deduped);
+      unsubPsirs = subscribePsirs(userUid, (docs) => {
+        console.log('[VendorIssueModule] PSIR subscription updated:', docs.length, 'records');
+        setPsirData(docs || []);
       });
-    } catch (err) { console.error('[VendorIssueModule] subscribeVendorIssues failed:', err); }
+    } catch (err) { console.error('[VendorIssueModule] subscribePsirs failed:', err); }
 
-    try {
-      unsubVendorDepts = subscribeVendorDepts(userUid, (docs) => setVendorDeptOrders(docs));
-    } catch (err) { console.error('[VendorIssueModule] subscribeVendorDepts failed:', err); }
-
-    try {
-      unsubVsir = subscribeVSIRRecords(userUid, (docs) => setVsirRecords(docs));
-    } catch (err) { console.error('[VendorIssueModule] subscribeVSIRRecords failed:', err); }
-
-    try {
-      unsubPurchaseOrders = subscribePurchaseOrders(userUid, (docs) => {
-        console.log('[VendorIssueModule] ✓ Received purchaseOrders from Firestore:', docs.length, 'items');
-        setPurchaseOrders(docs || []);
-      });
-    } catch (err) { console.error('[VendorIssueModule] subscribePurchaseOrders failed:', err); }
-
-    // Try to prime itemMaster from Firestore
     (async () => {
       try {
         const im = await getItemMaster(userUid);
-        if (Array.isArray(im) && im.length > 0) {
-          setItemMaster(im as any);
-          setItemNames(im.map((it: any) => it.itemName).filter(Boolean));
-        }
+        if (Array.isArray(im) && im.length > 0) { setItemMaster(im as any); setItemNames(im.map((it: any) => it.itemName).filter(Boolean)); }
       } catch (err) { console.error('[VendorIssueModule] getItemMaster failed:', err); }
     })();
 
@@ -239,175 +202,71 @@ const VendorIssueModule: React.FC = () => {
       if (unsubVendorDepts) unsubVendorDepts();
       if (unsubVsir) unsubVsir();
       if (unsubPurchaseOrders) unsubPurchaseOrders();
+      if (unsubPsirs) unsubPsirs(); // *** FIX ***
     };
   }, [userUid]);
 
-  // Load item master and vendor dept data on mount
   useEffect(() => {
-    console.debug('[VendorIssueModule][Debug] issues state:', issues);
-    console.debug('[VendorIssueModule][Debug] itemMaster:', itemMaster);
-    console.debug('[VendorIssueModule][Debug] itemNames:', itemNames);
-    console.debug('[VendorIssueModule][Debug] vendorDeptOrders:', vendorDeptOrders);
-    console.debug('[VendorIssueModule][Debug] newIssue:', newIssue);
-    console.debug('[VendorIssueModule][Debug] Auto-import effect running...');
-
     const itemMasterRaw = localStorage.getItem('itemMasterData');
-    if (itemMasterRaw) {
-      try {
-        const parsed = JSON.parse(itemMasterRaw);
-        if (Array.isArray(parsed)) {
-          setItemMaster(parsed);
-          setItemNames(parsed.map((item: any) => item.itemName).filter(Boolean));
-        }
-      } catch {}
-    }
-
+    if (itemMasterRaw) { try { const parsed = JSON.parse(itemMasterRaw); if (Array.isArray(parsed)) { setItemMaster(parsed); setItemNames(parsed.map((item: any) => item.itemName).filter(Boolean)); } } catch {} }
     const vendorDeptRaw = localStorage.getItem('vendorDeptData');
-    if (vendorDeptRaw) {
-      try {
-        const parsed = JSON.parse(vendorDeptRaw);
-        setVendorDeptOrders(parsed);
-        console.debug('[VendorIssueModule] Loaded vendorDeptOrders on mount:', parsed.map((o: any) => ({
-          poNo: o.materialPurchasePoNo,
-          vendorName: o.vendorName,
-          oaNo: o.oaNo,
-          batchNo: o.batchNo
-        })));
-      } catch {}
-    }
+    if (vendorDeptRaw) { try { setVendorDeptOrders(JSON.parse(vendorDeptRaw)); } catch {} }
   }, []);
 
-  // Listen for vendorDept and VSIR updates to reload vendorDeptOrders (register once on mount)
   useEffect(() => {
     const handleVendorDeptUpdate = () => {
-      console.log('[VendorIssueModule] ✓ VendorDept data updated event received!');
       const vendorDeptRaw = localStorage.getItem('vendorDeptData');
-      if (vendorDeptRaw) {
-        try {
-          const parsed = JSON.parse(vendorDeptRaw);
-          console.log('[VendorIssueModule] Parsed vendorDeptData with count:', parsed.length);
-          parsed.forEach((order: any, idx: number) => {
-            console.log(`[VendorIssueModule] [${idx}] PO: ${order.materialPurchasePoNo}, VendorName: "${order.vendorName}", OA: ${order.oaNo}`);
-          });
-          setVendorDeptOrders(parsed);
-          console.log('[VendorIssueModule] State updated - vendorDeptOrders will trigger re-render');
-        } catch (e) {
-          console.error('[VendorIssueModule] Error parsing vendorDeptData:', e);
-        }
-      } else {
-        console.warn('[VendorIssueModule] vendorDeptData not found in localStorage');
-      }
+      if (vendorDeptRaw) { try { setVendorDeptOrders(JSON.parse(vendorDeptRaw)); } catch {} }
     };
-    
-    const handleVSIRUpdate = () => {
-      console.log('[VendorIssueModule] ✓ VSIR data updated event received!');
-    };
-
-    // Listen to storage changes
     const storageHandler = (e: StorageEvent) => {
-      console.log('[VendorIssueModule] Storage event detected for key:', e.key);
-      if (e.key === 'vendorDeptData') {
-        handleVendorDeptUpdate();
-      } else if (e.key === 'vsri-records') {
-        handleVSIRUpdate();
-      }
+      if (e.key === 'vendorDeptData') handleVendorDeptUpdate();
     };
-
     window.addEventListener('storage', storageHandler);
     bus.addEventListener('vendorDept.updated', handleVendorDeptUpdate as EventListener);
-    bus.addEventListener('vsir.updated', handleVSIRUpdate as EventListener);
-    console.log('[VendorIssueModule] Listeners registered for vendorDept and VSIR updates (runs once on mount)');
-
+    bus.addEventListener('vsir.updated', (() => {}) as EventListener);
     return () => {
       window.removeEventListener('storage', storageHandler);
       bus.removeEventListener('vendorDept.updated', handleVendorDeptUpdate as EventListener);
-      bus.removeEventListener('vsir.updated', handleVSIRUpdate as EventListener);
-      console.log('[VendorIssueModule] Listeners removed');
     };
   }, []);
 
-  // Auto-fill Material Purchase PO No from Vendor Dept
   useEffect(() => {
     if (newIssue.materialPurchasePoNo) return;
     if (vendorDeptOrders.length > 0) {
       const latest = vendorDeptOrders[vendorDeptOrders.length - 1];
-      if (latest && latest.materialPurchasePoNo) {
-        setNewIssue(prev => ({ ...prev, materialPurchasePoNo: latest.materialPurchasePoNo }));
-        console.debug('[VendorIssueModule][AutoFill] Filled Material Purchase PO No:', latest.materialPurchasePoNo);
-      }
+      if (latest && latest.materialPurchasePoNo) setNewIssue(prev => ({ ...prev, materialPurchasePoNo: latest.materialPurchasePoNo }));
     }
   }, [vendorDeptOrders, newIssue.materialPurchasePoNo]);
 
-  // Auto-fill items table and date from Vendor Dept when PO No is set
   useEffect(() => {
-    if (!newIssue.materialPurchasePoNo || newIssue.items.length > 0) {
-      if (!newIssue.materialPurchasePoNo) {
-        console.debug('[VendorIssueModule][AutoFill] Skipped: No materialPurchasePoNo set');
-      } else if (newIssue.items.length > 0) {
-        console.debug('[VendorIssueModule][AutoFill] Skipped: newIssue.items already filled:', newIssue.items);
-      }
-      return;
-    }
+    if (!newIssue.materialPurchasePoNo || newIssue.items.length > 0) return;
     const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
-    if (!match) {
-      console.debug('[VendorIssueModule][AutoFill] No matching Vendor Dept order for PO:', newIssue.materialPurchasePoNo, vendorDeptOrders.map(o => o.materialPurchasePoNo));
-      return;
-    }
-    if (!Array.isArray(match.items) || match.items.length === 0) {
-      console.debug('[VendorIssueModule][AutoFill] Vendor Dept order has no items:', match);
-      return;
-    }
-    const items = match.items.map((item: any, idx: number) => {
-      const plannedQty = item.plannedQty;
-      const fallbackQty = item.qty || 0;
-      const usedQty = typeof plannedQty === 'number' ? plannedQty : fallbackQty;
-      if (typeof plannedQty === 'number') {
-        console.debug(`[VendorIssueModule][AutoFill] [Item ${idx}] Using plannedQty:`, plannedQty, item);
-      } else {
-        console.debug(`[VendorIssueModule][AutoFill] [Item ${idx}] plannedQty not found, using qty:`, fallbackQty, item);
-      }
-      return {
-        itemName: item.itemName || '',
-        itemCode: item.itemCode || '',
-        qty: usedQty,
-        indentBy: item.indentBy || '',
-        inStock: 0,
-        indentClosed: false,
-      };
-    });
+    if (!match || !Array.isArray(match.items) || match.items.length === 0) return;
+    const items = match.items.map((item: any) => ({
+      itemName: item.itemName || '', itemCode: item.itemCode || '',
+      qty: typeof item.plannedQty === 'number' ? item.plannedQty : (item.qty || 0),
+      indentBy: item.indentBy || '', inStock: 0, indentClosed: false,
+    }));
     const today = new Date().toISOString().slice(0, 10);
     setNewIssue(prev => ({ ...prev, items, date: prev.date || today }));
-    console.debug('[VendorIssueModule][AutoFill] Filled items and date (with plannedQty if available):', items, today);
   }, [newIssue.materialPurchasePoNo, vendorDeptOrders, newIssue.items.length]);
 
-  // Auto-fill OA No, Batch No, Vendor Name, and DC No when PO No changes
+  // Auto-fill OA No, Batch No, Vendor Name, DC No, Vendor Batch No when PO changes
   useEffect(() => {
     if (!newIssue.materialPurchasePoNo) return;
     const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
-    console.debug('[VendorIssueModule][Debug] Checking auto-fill for OA No, Batch No, Vendor Name, DC No:', {
-      poNo: newIssue.materialPurchasePoNo,
-      vendorDeptOrders,
-      match,
-      currentDcNo: newIssue.dcNo
-    });
-    
-    let oaNoValue = '';
-    let batchNoValue = '';
-    let vendorBatchNoValue = '';
-    let vendorNameValue = '';
-    let dcNoValue = '';
-    
-    // Try to get OA No, Batch No, Vendor Batch No, Vendor Name, and DC No from Vendor Dept
-    if (match) {
-      oaNoValue = match.oaNo || '';
-      batchNoValue = match.batchNo || '';
-      vendorBatchNoValue = match.vendorBatchNo || '';
-      vendorNameValue = match.vendorName || '';
-      dcNoValue = (typeof match.dcNo !== 'undefined' && String(match.dcNo).trim() !== '') ? String(match.dcNo) : '';
-      console.debug('[VendorIssueModule][AutoFill] Found values from VendorDept:', { oaNoValue, batchNoValue, vendorBatchNoValue, vendorNameValue, dcNoValue });
-    }
-    
-    // If OA No or Batch No not found, try PSIR data
+
+    let oaNoValue = match?.oaNo || '';
+    let batchNoValue = match?.batchNo || '';
+    let vendorBatchNoValue = match?.vendorBatchNo || '';
+    let vendorNameValue = match?.vendorName || '';
+    let dcNoValue = (match?.dcNo && String(match.dcNo).trim() !== '') ? String(match.dcNo) : '';
+
+    // *** FIX: fill batchNo and oaNo from live PSIR subscription if still missing ***
+    if (!batchNoValue) batchNoValue = getBatchNoFromPSIR(newIssue.materialPurchasePoNo);
+    if (!oaNoValue) oaNoValue = getOaNoFromPSIR(newIssue.materialPurchasePoNo);
+
+    // Fallback PSIR from localStorage (legacy)
     if (!oaNoValue || !batchNoValue) {
       try {
         const psirRaw = localStorage.getItem('psirData');
@@ -415,409 +274,197 @@ const VendorIssueModule: React.FC = () => {
           const psirs = JSON.parse(psirRaw);
           if (Array.isArray(psirs)) {
             const psirMatch = psirs.find((p: any) => p.poNo === newIssue.materialPurchasePoNo);
-            if (psirMatch) {
-              if (!oaNoValue) oaNoValue = psirMatch.oaNo || '';
-              if (!batchNoValue) batchNoValue = psirMatch.batchNo || '';
-              console.debug('[VendorIssueModule][AutoFill] Found values from PSIR:', { oaNoValue, batchNoValue });
-            }
+            if (psirMatch) { if (!oaNoValue) oaNoValue = psirMatch.oaNo || ''; if (!batchNoValue) batchNoValue = psirMatch.batchNo || ''; }
           }
         }
-      } catch (e) {
-        console.error('[VendorIssueModule] Error reading PSIR:', e);
-      }
+      } catch {}
     }
-    
-    // If Vendor Batch No not found, try VSIR data
-    if (!vendorBatchNoValue) {
-      const vsirVendorBatchNo = getVendorBatchNoFromVSIR(newIssue.materialPurchasePoNo);
-      if (vsirVendorBatchNo) {
-        vendorBatchNoValue = vsirVendorBatchNo;
-        console.debug('[VendorIssueModule][AutoFill] Found vendor batch no from VSIR:', vendorBatchNoValue);
-      }
-    }
-    
-    setNewIssue(prev => {
-      const updated = {
-        ...prev,
-        oaNo: oaNoValue || prev.oaNo,
-        batchNo: batchNoValue || prev.batchNo,
-        vendorBatchNo: vendorBatchNoValue || prev.vendorBatchNo,
-        vendorName: vendorNameValue || prev.vendorName,
-        dcNo: dcNoValue || prev.dcNo
-      };
-      console.debug('[VendorIssueModule][AutoFill] Updated newIssue state:', updated);
-      return updated;
-    });
-  }, [newIssue.materialPurchasePoNo, vendorDeptOrders]);
 
-  // Sync vendor name and vendor batch no from vendorDeptOrders to existing issues
+    if (!vendorBatchNoValue) vendorBatchNoValue = getVendorBatchNoFromVSIR(newIssue.materialPurchasePoNo);
+
+    setNewIssue(prev => ({
+      ...prev,
+      oaNo: oaNoValue || prev.oaNo,
+      batchNo: batchNoValue || prev.batchNo,
+      vendorBatchNo: vendorBatchNoValue || prev.vendorBatchNo,
+      vendorName: vendorNameValue || prev.vendorName,
+      dcNo: dcNoValue || prev.dcNo,
+    }));
+  }, [newIssue.materialPurchasePoNo, vendorDeptOrders, psirData]); // *** FIX: depend on psirData ***
+
+  // *** FIX: sync batchNo/oaNo from live psirData into existing issues ***
   useEffect(() => {
-    if (issues.length === 0 || vendorDeptOrders.length === 0) return;
-    
+    if (issues.length === 0 || (vendorDeptOrders.length === 0 && psirData.length === 0)) return;
+
     let updated = false;
     const updatedIssues = issues.map(issue => {
       const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === issue.materialPurchasePoNo);
-      if (match) {
-        let needsUpdate = false;
-        let newVendorName = issue.vendorName;
-        let newVendorBatchNo = issue.vendorBatchNo;
-        
-        if (!newVendorName && match.vendorName) {
-          newVendorName = match.vendorName;
-          needsUpdate = true;
-        }
-        
-        if (!newVendorBatchNo && match.vendorBatchNo) {
-          newVendorBatchNo = match.vendorBatchNo;
-          needsUpdate = true;
-        }
-        
-        // If still no vendor batch no, try VSIR
-        if (!newVendorBatchNo) {
-          const vsirVendorBatchNo = getVendorBatchNoFromVSIR(issue.materialPurchasePoNo);
-          if (vsirVendorBatchNo) {
-            newVendorBatchNo = vsirVendorBatchNo;
-            needsUpdate = true;
-            console.debug('[VendorIssueModule][Sync] ✓ Found vendor batch no from VSIR for PO:', issue.materialPurchasePoNo);
-          }
-        }
-        
-        if (needsUpdate) {
-          updated = true;
-          console.debug('[VendorIssueModule][Sync] Updated issue with PO:', issue.materialPurchasePoNo, { newVendorName, newVendorBatchNo });
-          return { ...issue, vendorName: newVendorName, vendorBatchNo: newVendorBatchNo };
-        }
+      let newVendorName = issue.vendorName;
+      let newVendorBatchNo = issue.vendorBatchNo;
+      let newBatchNo = issue.batchNo;
+      let newOaNo = issue.oaNo;
+      let needsUpdate = false;
+
+      if (!newVendorName && match?.vendorName) { newVendorName = match.vendorName; needsUpdate = true; }
+      if (!newVendorBatchNo && match?.vendorBatchNo) { newVendorBatchNo = match.vendorBatchNo; needsUpdate = true; }
+
+      // *** FIX: fill batchNo from live psirData if still empty ***
+      if (!newBatchNo && issue.materialPurchasePoNo) {
+        const psirBatch = getBatchNoFromPSIR(issue.materialPurchasePoNo);
+        if (psirBatch) { newBatchNo = psirBatch; needsUpdate = true; }
+      }
+      if (!newOaNo && issue.materialPurchasePoNo) {
+        const psirOa = getOaNoFromPSIR(issue.materialPurchasePoNo);
+        if (psirOa) { newOaNo = psirOa; needsUpdate = true; }
+      }
+      // Also fill from vendorDeptOrders
+      if (!newBatchNo && match?.batchNo) { newBatchNo = match.batchNo; needsUpdate = true; }
+      if (!newOaNo && match?.oaNo) { newOaNo = match.oaNo; needsUpdate = true; }
+
+      if (!newVendorBatchNo) {
+        const vsirVB = getVendorBatchNoFromVSIR(issue.materialPurchasePoNo);
+        if (vsirVB) { newVendorBatchNo = vsirVB; needsUpdate = true; }
+      }
+
+      if (needsUpdate) {
+        updated = true;
+        return { ...issue, vendorName: newVendorName, vendorBatchNo: newVendorBatchNo, batchNo: newBatchNo, oaNo: newOaNo };
       }
       return issue;
     });
-    
+
     if (updated) {
-      console.debug('[VendorIssueModule][Sync] Syncing vendor info to issues');
-      const dedupedUpdatedIssues = deduplicateVendorIssues(updatedIssues);
-      setIssues(dedupedUpdatedIssues);
+      const deduped = deduplicateVendorIssues(updatedIssues);
+      setIssues(deduped);
       if (userUid) {
         (async () => {
           try {
-            await Promise.all(dedupedUpdatedIssues.map(async (iss: any) => {
+            await Promise.all(deduped.map(async (iss: any) => {
               if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
               else await addVendorIssue(userUid, iss);
             }));
           } catch (err) {
-            console.error('[VendorIssueModule] Failed to persist synced vendor info to Firestore:', err);
-            try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
+            console.error('[VendorIssueModule] Failed to persist synced info to Firestore:', err);
+            try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {}
           }
         })();
-      } else {
-        try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
       }
     }
-  }, [vendorDeptOrders]);
+  }, [vendorDeptOrders, psirData, vsirRecords]); // *** FIX: depend on psirData ***
 
-  // Auto-add Vendor Issue when PO No, date, and items are filled
   useEffect(() => {
-    console.debug('[VendorIssueModule][Debug] Auto-add Vendor Issue check:', {
-      newIssue,
-      issues,
-      vendorDeptOrders
-    });
     if (
-      newIssue.materialPurchasePoNo &&
-      newIssue.date &&
-      newIssue.items.length > 0 &&
+      newIssue.materialPurchasePoNo && newIssue.date && newIssue.items.length > 0 &&
       !issues.some(issue => issue.materialPurchasePoNo === newIssue.materialPurchasePoNo)
     ) {
       const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
-      let autoDcNo = getNextDCNo(issues);
-      if (match && typeof match.dcNo !== 'undefined' && String(match.dcNo).trim() !== '') {
-        autoDcNo = String(match.dcNo);
-        console.debug('[VendorIssueModule][AutoAdd] Using DC No from VendorDept:', autoDcNo);
-      } else {
-        console.debug('[VendorIssueModule][AutoAdd] Using fallback DC No:', autoDcNo);
-      }
+      const autoDcNo = (match && match.dcNo && String(match.dcNo).trim() !== '') ? String(match.dcNo) : getNextDCNo(issues);
       const updated = [...issues, { ...newIssue, dcNo: autoDcNo, issueNo: getNextIssueNo(issues) }];
-      const dedupedUpdated = deduplicateVendorIssues(updated);
-      setIssues(dedupedUpdated);
+      const deduped = deduplicateVendorIssues(updated);
+      setIssues(deduped);
       if (userUid) {
         (async () => {
-          try {
-            const last = dedupedUpdated[dedupedUpdated.length - 1];
-            if (last && !last.id) await addVendorIssue(userUid, last);
-            // Let subscription refresh the list; keep local UI responsive
-          } catch (err) {
-            console.error('[VendorIssueModule] Failed to add Vendor Issue to Firestore:', err);
-            try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
-          }
+          try { const last = deduped[deduped.length - 1]; if (last && !last.id) await addVendorIssue(userUid, last); }
+          catch (err) { console.error('[VendorIssueModule] Failed to add Vendor Issue to Firestore:', err); try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {} }
         })();
-      } else {
-        try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
-      }
-      clearNewIssue(dedupedUpdated);
-      console.debug('[VendorIssueModule][AutoAdd] Auto-added Vendor Issue:', { ...newIssue, dcNo: autoDcNo });
+      } else { try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {} }
+      clearNewIssue(deduped);
     }
   }, [newIssue, issues, vendorDeptOrders]);
 
-  // Auto-import purchase orders from Firestore subscription
   useEffect(() => {
-    const importPurchaseOrders = () => {
-      console.log('[VendorIssueModule][AutoImport] === IMPORT CYCLE STARTED ===');
-      console.log('[VendorIssueModule][AutoImport] purchaseOrders from Firestore count:', purchaseOrders.length);
-      
-      if (purchaseOrders.length === 0) {
-        console.warn('[VendorIssueModule][AutoImport] No purchase orders in Firestore, skipping import');
-        return;
-      }
+    if (purchaseOrders.length === 0 || !userUid) return;
 
-      const poGroups: Record<string, any[]> = {};
-      purchaseOrders.forEach((entry: any) => {
-        if (!entry.poNo) {
-          console.warn('[VendorIssueModule][AutoImport] Entry missing poNo:', entry);
-          return;
-        }
-        if (!poGroups[entry.poNo]) poGroups[entry.poNo] = [];
-        poGroups[entry.poNo].push(entry);
-      });
+    const poGroups: Record<string, any[]> = {};
+    purchaseOrders.forEach((entry: any) => {
+      if (!entry.poNo) return;
+      if (!poGroups[entry.poNo]) poGroups[entry.poNo] = [];
+      poGroups[entry.poNo].push(entry);
+    });
 
-      const purchasePOs = Object.keys(poGroups);
-      console.log('[VendorIssueModule][AutoImport] ✓ Found unique POs:', purchasePOs);
-      console.log('[VendorIssueModule][AutoImport] Total unique POs count:', purchasePOs.length);
-      
-      // Get the current issues to check existing POs
-      const currentIssues = issues || [];
-      const existingPOs = new Set(currentIssues.map(issue => issue.materialPurchasePoNo));
-      console.log('[VendorIssueModule][AutoImport] Current issues count:', currentIssues.length);
-      console.log('[VendorIssueModule][AutoImport] Existing POs in issues:', Array.from(existingPOs));
-      
-      let added = false;
-      const newIssues = [...currentIssues];
+    const currentIssues = issues || [];
+    const existingPOs = new Set(currentIssues.map(issue => issue.materialPurchasePoNo));
+    let added = false;
+    const newIssues = [...currentIssues];
 
-      purchasePOs.forEach(poNo => {
-        if (!existingPOs.has(poNo)) {
-          console.log('[VendorIssueModule][AutoImport] ✓ NEW PO to import:', poNo);
-          const group = poGroups[poNo];
-          const items = group.map((item: any) => ({
-            itemName: item.itemName || item.model || '',
-            itemCode: item.itemCode || '',
-            qty: item.qty || 0,
-            indentBy: item.indentBy || '',
-            inStock: 0,
-            indentClosed: false,
-          }));
-          const first = group[0];
-          const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === poNo);
-          let dcNo = getNextDCNo(newIssues);
-          if (match && typeof match.dcNo !== 'undefined' && String(match.dcNo).trim() !== '') {
-            dcNo = String(match.dcNo);
-            console.debug('[VendorIssueModule][AutoImport] Using DC No from VendorDept:', dcNo);
-          }
-          
-          // Get OA No and Batch No from PSIR
-          let autoOaNo = match?.oaNo || '';
-          let autoBatchNo = match?.batchNo || '';
-          
+    Object.keys(poGroups).forEach(poNo => {
+      if (!existingPOs.has(poNo)) {
+        const group = poGroups[poNo];
+        const items = group.map((item: any) => ({ itemName: item.itemName || item.model || '', itemCode: item.itemCode || '', qty: item.qty || 0, indentBy: item.indentBy || '', inStock: 0, indentClosed: false }));
+        const first = group[0];
+        const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === poNo);
+        const dcNo = (match && match.dcNo && String(match.dcNo).trim() !== '') ? String(match.dcNo) : getNextDCNo(newIssues);
+
+        let autoOaNo = match?.oaNo || '';
+        let autoBatchNo = match?.batchNo || '';
+
+        // *** FIX: use live psirData for batchNo/oaNo ***
+        if (!autoBatchNo) autoBatchNo = getBatchNoFromPSIR(poNo);
+        if (!autoOaNo) autoOaNo = getOaNoFromPSIR(poNo);
+
+        // Fallback localStorage
+        if (!autoOaNo || !autoBatchNo) {
           try {
             const psirRaw = localStorage.getItem('psirData');
             if (psirRaw) {
               const psirs = JSON.parse(psirRaw);
               if (Array.isArray(psirs)) {
                 const psirMatch = psirs.find((p: any) => p.poNo === poNo);
-                if (psirMatch) {
-                  autoOaNo = psirMatch.oaNo || autoOaNo;
-                  autoBatchNo = psirMatch.batchNo || autoBatchNo;
-                  console.debug('[VendorIssueModule][AutoImport] PSIR values for PO', poNo, ':', { autoOaNo, autoBatchNo });
-                }
+                if (psirMatch) { autoOaNo = autoOaNo || psirMatch.oaNo || ''; autoBatchNo = autoBatchNo || psirMatch.batchNo || ''; }
               }
             }
-          } catch (e) {
-            console.error('[VendorIssueModule][AutoImport] Error reading PSIR:', e);
-          }
-          
-          // Get vendor name and vendor batch no
-          let autoVendorName = match?.vendorName || '';
-          let autoVendorBatchNo = match?.vendorBatchNo || '';
-          
-          // Try VSIR if not found in VendorDept
-          if (!autoVendorBatchNo) {
-            const vsirVendorBatchNo = getVendorBatchNoFromVSIR(poNo);
-            if (vsirVendorBatchNo) {
-              autoVendorBatchNo = vsirVendorBatchNo;
-              console.debug('[VendorIssueModule][AutoImport] ✓ Vendor batch no from VSIR:', autoVendorBatchNo);
-            }
-          }
-          
-          // Try to find from purchaseOrders entries for this PO
-          if (!autoVendorBatchNo && group.length > 0) {
-            const vendorBatchFromPO = group.find((item: any) => item.vendorBatchNo && String(item.vendorBatchNo).trim());
-            if (vendorBatchFromPO) {
-              autoVendorBatchNo = vendorBatchFromPO.vendorBatchNo;
-              console.debug('[VendorIssueModule][AutoImport] ✓ Vendor batch no from purchaseOrders:', autoVendorBatchNo);
-            }
-          }
-          
-          // Log vendor batch no status
-          if (!autoVendorBatchNo) {
-            console.warn('[VendorIssueModule][AutoImport] ⚠ Vendor Batch No not found for PO:', poNo);
-          }
-          
-          console.debug('[VendorIssueModule][AutoImport] Final vendor values - Name:', autoVendorName, 'Batch No:', autoVendorBatchNo);
-          
-          const newIssueObj = {
-            date: first?.orderPlaceDate || new Date().toISOString().slice(0, 10),
-            materialPurchasePoNo: poNo,
-            oaNo: autoOaNo,
-            batchNo: autoBatchNo,
-            vendorBatchNo: autoVendorBatchNo,
-            dcNo,
-            issueNo: getNextIssueNo(newIssues),
-            vendorName: autoVendorName,
-            items,
-          };
-          
-          newIssues.push(newIssueObj);
-          console.debug('[VendorIssueModule][AutoImport] Added issue for PO:', poNo, newIssueObj);
-          added = true;
-        } else {
-          console.log('[VendorIssueModule][AutoImport] ✗ PO already exists (skipping):', poNo);
+          } catch {}
         }
-      });
 
-      if (added) {
-        console.log('[VendorIssueModule][AutoImport] ✓ Added new issues to list, total before dedup:', newIssues.length);
-        const dedupedNewIssues = deduplicateVendorIssues(newIssues);
-        console.log('[VendorIssueModule][AutoImport] Total issues after dedup:', dedupedNewIssues.length);
-        console.log('[VendorIssueModule][AutoImport] POs in final list:', dedupedNewIssues.map(i => i.materialPurchasePoNo));
-        
-        setIssues(dedupedNewIssues);
-        if (userUid) {
-          (async () => {
-            try {
-              await Promise.all(dedupedNewIssues.map(async (iss: any) => {
-                if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
-                else await addVendorIssue(userUid, iss);
-              }));
-              console.log('[VendorIssueModule][AutoImport] ✓ Imported issues persisted to Firestore successfully');
-            } catch (err) {
-              console.error('[VendorIssueModule] Failed to persist imported issues to Firestore:', err);
-              try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedNewIssues)); } catch {}
-            }
-          })();
-        } else {
-          try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedNewIssues)); } catch {}
+        let autoVendorName = match?.vendorName || '';
+        let autoVendorBatchNo = match?.vendorBatchNo || '';
+        if (!autoVendorBatchNo) autoVendorBatchNo = getVendorBatchNoFromVSIR(poNo);
+        if (!autoVendorBatchNo && group.length > 0) {
+          const vbFromPO = group.find((item: any) => item.vendorBatchNo && String(item.vendorBatchNo).trim());
+          if (vbFromPO) autoVendorBatchNo = vbFromPO.vendorBatchNo;
         }
-      } else {
-        console.log('[VendorIssueModule][AutoImport] No new POs to add this cycle');
+
+        newIssues.push({ date: first?.orderPlaceDate || new Date().toISOString().slice(0, 10), materialPurchasePoNo: poNo, oaNo: autoOaNo, batchNo: autoBatchNo, vendorBatchNo: autoVendorBatchNo, dcNo, issueNo: getNextIssueNo(newIssues), vendorName: autoVendorName, items });
+        added = true;
       }
-      console.log('[VendorIssueModule][AutoImport] === IMPORT CYCLE ENDED ===\n');
-    };
-
-    // Only run import when there are purchase orders to import
-    if (purchaseOrders.length > 0 && userUid) {
-      console.log('[VendorIssueModule][AutoImport] Triggering import based on purchaseOrders update');
-      importPurchaseOrders();
-    }
-  }, [purchaseOrders, userUid]);
-
-  // Fill missing Vendor Batch No from VSIR and purchaseOrders for existing issues
-  useEffect(() => {
-    if (issues.length === 0) return;
-    
-    let updated = false;
-    const updatedIssues = issues.map(issue => {
-      if (!issue.vendorBatchNo && issue.materialPurchasePoNo) {
-        // Try VSIR first
-        const vsirVendorBatchNo = getVendorBatchNoFromVSIR(issue.materialPurchasePoNo);
-        if (vsirVendorBatchNo) {
-          console.debug('[VendorIssueModule][FillVendorBatch] ✓ Filled vendor batch no from VSIR for PO:', issue.materialPurchasePoNo, vsirVendorBatchNo);
-          updated = true;
-          return { ...issue, vendorBatchNo: vsirVendorBatchNo };
-        }
-        
-        // Try purchaseOrders if VSIR didn't have it
-        const poEntry = purchaseOrders.find((po: any) => 
-          String(po.poNo || '').trim() === String(issue.materialPurchasePoNo || '').trim() && 
-          po.vendorBatchNo && String(po.vendorBatchNo).trim()
-        );
-        if (poEntry) {
-          console.debug('[VendorIssueModule][FillVendorBatch] ✓ Filled vendor batch no from purchaseOrders for PO:', issue.materialPurchasePoNo, poEntry.vendorBatchNo);
-          updated = true;
-          return { ...issue, vendorBatchNo: poEntry.vendorBatchNo };
-        }
-      }
-      return issue;
     });
-    
-    if (updated) {
-      console.debug('[VendorIssueModule][FillVendorBatch] Updating issues with vendor batch no');
-      const dedupedUpdatedIssues = deduplicateVendorIssues(updatedIssues);
-      setIssues(dedupedUpdatedIssues);
+
+    if (added) {
+      const deduped = deduplicateVendorIssues(newIssues);
+      setIssues(deduped);
       if (userUid) {
         (async () => {
           try {
-            await Promise.all(dedupedUpdatedIssues.map(async (iss: any) => {
-              if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
-              else await addVendorIssue(userUid, iss);
-            }));
-            console.log('[VendorIssueModule][FillVendorBatch] ✓ Vendor batch no updates persisted to Firestore');
-          } catch (err) {
-            console.error('[VendorIssueModule] Failed to persist vendor batch no updates to Firestore:', err);
-            try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
-          }
+            await Promise.all(deduped.map(async (iss: any) => { if (iss.id) await updateVendorIssue(userUid, iss.id, iss); else await addVendorIssue(userUid, iss); }));
+          } catch (err) { console.error('[VendorIssueModule] Failed to persist imported issues to Firestore:', err); try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {} }
         })();
-      } else {
-        try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
+      }
+    }
+  }, [purchaseOrders, userUid, psirData]); // *** FIX: depend on psirData ***
+
+  useEffect(() => {
+    if (issues.length === 0) return;
+    let updated = false;
+    const updatedIssues = issues.map(issue => {
+      if (!issue.vendorBatchNo && issue.materialPurchasePoNo) {
+        const vsirVB = getVendorBatchNoFromVSIR(issue.materialPurchasePoNo);
+        if (vsirVB) { updated = true; return { ...issue, vendorBatchNo: vsirVB }; }
+        const poEntry = purchaseOrders.find((po: any) => String(po.poNo || '').trim() === String(issue.materialPurchasePoNo || '').trim() && po.vendorBatchNo && String(po.vendorBatchNo).trim());
+        if (poEntry) { updated = true; return { ...issue, vendorBatchNo: poEntry.vendorBatchNo }; }
+      }
+      return issue;
+    });
+    if (updated) {
+      const deduped = deduplicateVendorIssues(updatedIssues);
+      setIssues(deduped);
+      if (userUid) {
+        (async () => {
+          try { await Promise.all(deduped.map(async (iss: any) => { if (iss.id) await updateVendorIssue(userUid, iss.id, iss); else await addVendorIssue(userUid, iss); })); }
+          catch (err) { try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {} }
+        })();
       }
     }
   }, [vsirRecords, purchaseOrders, userUid]);
-
-  // Fill missing OA No and Batch No from PSIR for existing issues
-  useEffect(() => {
-    const psirRaw = localStorage.getItem('psirData');
-    if (!psirRaw || issues.length === 0) return;
-    
-    try {
-      const psirs = JSON.parse(psirRaw);
-      if (!Array.isArray(psirs)) return;
-      
-      let updated = false;
-      const updatedIssues = issues.map(issue => {
-        if ((!issue.oaNo || !issue.batchNo) && issue.materialPurchasePoNo) {
-          const psirMatch = psirs.find((p: any) => p.poNo === issue.materialPurchasePoNo);
-          if (psirMatch) {
-            const newOaNo = issue.oaNo || psirMatch.oaNo || '';
-            const newBatchNo = issue.batchNo || psirMatch.batchNo || '';
-            if (newOaNo !== issue.oaNo || newBatchNo !== issue.batchNo) {
-              console.debug('[VendorIssueModule][FillMissing] Filling OA No and Batch No for PO:', issue.materialPurchasePoNo);
-              updated = true;
-              return { ...issue, oaNo: newOaNo, batchNo: newBatchNo };
-            }
-          }
-        }
-        return issue;
-      });
-      
-      if (updated) {
-        console.debug('[VendorIssueModule][FillMissing] Updated issues:', updatedIssues);
-        const dedupedUpdatedIssues = deduplicateVendorIssues(updatedIssues);
-        setIssues(dedupedUpdatedIssues);
-        if (userUid) {
-          (async () => {
-            try {
-              await Promise.all(dedupedUpdatedIssues.map(async (iss: any) => {
-                if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
-                else await addVendorIssue(userUid, iss);
-              }));
-            } catch (err) {
-              console.error('[VendorIssueModule] Failed to persist filled missing OA/Batch to Firestore:', err);
-              try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
-            }
-          })();
-        } else {
-          try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdatedIssues)); } catch {}
-        }
-      }
-    } catch (e) {
-      console.error('[VendorIssueModule][FillMissing] Error reading PSIR:', e);
-    }
-  }, []);
 
   const handleAddItem = () => {
     if (!itemInput.itemName || !itemInput.itemCode || !itemInput.indentBy || itemInput.qty <= 0) return;
@@ -826,17 +473,7 @@ const VendorIssueModule: React.FC = () => {
   };
 
   const clearNewIssue = (updatedIssues: VendorIssue[]) => {
-    setNewIssue({
-      date: '',
-      materialPurchasePoNo: '',
-      oaNo: '',
-      batchNo: '',
-      vendorBatchNo: '',
-      dcNo: '',
-      issueNo: getNextIssueNo(updatedIssues),
-      vendorName: '',
-      items: [],
-    });
+    setNewIssue({ date: '', materialPurchasePoNo: '', oaNo: '', batchNo: '', vendorBatchNo: '', dcNo: '', issueNo: getNextIssueNo(updatedIssues), vendorName: '', items: [] });
     setItemInput({ itemName: '', itemCode: '', qty: 0, indentBy: '', inStock: 0, indentClosed: false });
   };
 
@@ -845,131 +482,64 @@ const VendorIssueModule: React.FC = () => {
     const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
     const dcNo = match && match.dcNo && String(match.dcNo).trim() !== '' ? match.dcNo : getNextDCNo(issues);
     const updated = [...issues, { ...newIssue, dcNo, issueNo: getNextIssueNo(issues) }];
-    const dedupedUpdated = deduplicateVendorIssues(updated);
-    setIssues(dedupedUpdated);
+    const deduped = deduplicateVendorIssues(updated);
+    setIssues(deduped);
     if (userUid) {
       (async () => {
-        try {
-          const last = dedupedUpdated[dedupedUpdated.length - 1];
-          if (last && !last.id) await addVendorIssue(userUid, last);
-        } catch (err) {
-          console.error('[VendorIssueModule] Failed to add Vendor Issue to Firestore:', err);
-          try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
-        }
+        try { const last = deduped[deduped.length - 1]; if (last && !last.id) await addVendorIssue(userUid, last); }
+        catch (err) { console.error('[VendorIssueModule] Failed to add Vendor Issue to Firestore:', err); try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {} }
       })();
-    } else {
-      try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
-    }
-    clearNewIssue(dedupedUpdated);
+    } else { try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {} }
+    clearNewIssue(deduped);
   };
 
   const handleEditIssue = (idx: number) => {
     const issueToEdit = issues[idx];
     setNewIssue(issueToEdit);
     setEditIssueIdx(idx);
-    
-    // Populate itemInput with the first item from the issue for editing
-    if (issueToEdit.items && issueToEdit.items.length > 0) {
-      setItemInput(issueToEdit.items[0]);
-    }
+    if (issueToEdit.items && issueToEdit.items.length > 0) setItemInput(issueToEdit.items[0]);
   };
 
   const handleUpdateIssue = () => {
     if (editIssueIdx === null) return;
-    
-    // If itemInput has been modified, update the first item in the newIssue
-    if (newIssue.items.length > 0 && itemInput.itemName) {
-      newIssue.items[0] = { ...itemInput };
-      console.log('[VendorIssueModule] Updated first item with itemInput:', itemInput);
-    }
-    
+    if (newIssue.items.length > 0 && itemInput.itemName) { newIssue.items[0] = { ...itemInput }; }
     const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
     const dcNo = match && match.dcNo && String(match.dcNo).trim() !== '' ? match.dcNo : issues[editIssueIdx].dcNo;
-    const updated = issues.map((issue, idx) =>
-      idx === editIssueIdx ? { ...newIssue, dcNo } : issue
-    );
-    const dedupedUpdated = deduplicateVendorIssues(updated);
-    setIssues(dedupedUpdated);
+    const updated = issues.map((issue, idx) => idx === editIssueIdx ? { ...newIssue, dcNo } : issue);
+    const deduped = deduplicateVendorIssues(updated);
+    setIssues(deduped);
     if (userUid) {
       (async () => {
-        try {
-          await Promise.all(dedupedUpdated.map(async (iss: any) => {
-            if (iss.id) await updateVendorIssue(userUid, iss.id, iss);
-            else await addVendorIssue(userUid, iss);
-          }));
-        } catch (err) {
-          console.error('[VendorIssueModule] Failed to persist updated Vendor Issue to Firestore:', err);
-          try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
-        }
+        try { await Promise.all(deduped.map(async (iss: any) => { if (iss.id) await updateVendorIssue(userUid, iss.id, iss); else await addVendorIssue(userUid, iss); })); }
+        catch (err) { console.error('[VendorIssueModule] Failed to persist updated Vendor Issue to Firestore:', err); try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {} }
       })();
-    } else {
-      try { localStorage.setItem('vendorIssueData', JSON.stringify(dedupedUpdated)); } catch {}
-    }
-    clearNewIssue(dedupedUpdated);
+    } else { try { localStorage.setItem('vendorIssueData', JSON.stringify(deduped)); } catch {} }
+    clearNewIssue(deduped);
     setEditIssueIdx(null);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target as HTMLInputElement;
-    console.log('[VendorIssueModule] handleChange:', { name, value, type });
-    
+    const { name, value } = e.target as HTMLInputElement;
     if (name === 'itemName') {
       const found = itemMaster.find(item => item.itemName === value);
-      setItemInput(prev => ({
-        ...prev,
-        itemName: value,
-        itemCode: found ? found.itemCode : prev.itemCode,
-      }));
-    } else if (name === 'qty') {
-      const numValue = value === '' ? 0 : parseInt(value, 10);
-      console.log('[VendorIssueModule] qty change:', { value, numValue });
-      setItemInput(prev => ({
-        ...prev,
-        qty: numValue,
-      }));
-    } else if (name === 'indentBy') {
-      setItemInput(prev => ({
-        ...prev,
-        indentBy: value,
-      }));
-    } else if (name === 'inStock') {
-      const numValue = value === '' ? 0 : parseInt(value, 10);
-      setItemInput(prev => ({
-        ...prev,
-        inStock: numValue,
-      }));
-    } else if (name === 'itemCode') {
-      setItemInput(prev => ({
-        ...prev,
-        itemCode: value,
-      }));
+      setItemInput(prev => ({ ...prev, itemName: value, itemCode: found ? found.itemCode : prev.itemCode }));
+    } else if (name === 'qty' || name === 'inStock') {
+      setItemInput(prev => ({ ...prev, [name]: value === '' ? 0 : parseInt(value, 10) }));
+    } else {
+      setItemInput(prev => ({ ...prev, [name]: value }));
     }
   };
 
-  // Debug panel state
   const [showDebug, setShowDebug] = useState(false);
-  // Collect debug info for plannedQty/Qty filling
   const debugInfo: string[] = [];
   if (newIssue.materialPurchasePoNo) {
     const match = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
-    if (!match) {
-      debugInfo.push(`No Vendor Dept order found for PO: ${newIssue.materialPurchasePoNo}`);
-    } else if (!Array.isArray(match.items) || match.items.length === 0) {
-      debugInfo.push(`Vendor Dept order for PO ${newIssue.materialPurchasePoNo} has no items.`);
-    } else {
-      match.items.forEach((item: any, idx: number) => {
-        const plannedQty = item.plannedQty;
-        const fallbackQty = item.qty || 0;
-        if (typeof plannedQty === 'number') {
-          debugInfo.push(`Item[${idx}] ${item.itemName} (${item.itemCode}): plannedQty=${plannedQty} (used)`);
-        } else {
-          debugInfo.push(`Item[${idx}] ${item.itemName} (${item.itemCode}): plannedQty not found, using qty=${fallbackQty}`);
-        }
-      });
-    }
-  } else {
-    debugInfo.push('No Material Purchase PO No selected.');
-  }
+    if (!match) { debugInfo.push(`No Vendor Dept order for PO: ${newIssue.materialPurchasePoNo}`); }
+    else if (!Array.isArray(match.items) || match.items.length === 0) { debugInfo.push(`VendorDept order for PO ${newIssue.materialPurchasePoNo} has no items.`); }
+    else { match.items.forEach((item: any, idx: number) => { const pq = item.plannedQty; debugInfo.push(`Item[${idx}] ${item.itemName} (${item.itemCode}): ${typeof pq === 'number' ? `plannedQty=${pq} (used)` : `plannedQty not found, using qty=${item.qty || 0}`}`); }); }
+    const psirBatch = getBatchNoFromPSIR(newIssue.materialPurchasePoNo);
+    debugInfo.push(`PSIR batchNo for PO: "${psirBatch || '(not found)'}"`);
+  } else { debugInfo.push('No Material Purchase PO No selected.'); }
 
   return (
     <div>
@@ -979,161 +549,63 @@ const VendorIssueModule: React.FC = () => {
       </button>
       {showDebug && (
         <div style={{ background: '#222', color: '#fff', padding: 12, borderRadius: 6, marginBottom: 16, fontSize: 13 }}>
-          <strong>Debug Info (Qty/PlannedQty):</strong>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {debugInfo.map((msg, i) => <li key={i}>{msg}</li>)}
-          </ul>
+          <strong>Debug Info:</strong>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>{debugInfo.map((msg, i) => <li key={i}>{msg}</li>)}</ul>
+          <div style={{ marginTop: 8 }}>PSIR records loaded: {psirData.length}</div>
         </div>
       )}
       <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
-        <input
-          type="date"
-          placeholder="Date"
-          value={newIssue.date}
-          onChange={e => setNewIssue({ ...newIssue, date: e.target.value })}
-        />
-        <input
-          placeholder="Material Purchase PO No"
-          value={newIssue.materialPurchasePoNo}
-          onChange={e => setNewIssue({ ...newIssue, materialPurchasePoNo: e.target.value })}
-        />
-        <input
-          placeholder="Vendor Name"
-          value={newIssue.vendorName}
-          readOnly
-          style={{ fontWeight: 'bold', background: '#f0f0f0', width: 150 }}
-        />
-        <input
-          placeholder="OA No"
-          value={newIssue.oaNo}
-          readOnly
-          style={{ fontWeight: 'bold', background: '#f0f0f0', width: 120 }}
-        />
-        <input
-          placeholder="Batch No"
-          value={newIssue.batchNo}
-          readOnly
-          style={{ fontWeight: 'bold', background: '#f0f0f0', width: 120 }}
-        />
-        <input
-          placeholder="Vendor Batch No"
-          value={newIssue.vendorBatchNo}
-          readOnly
-          style={{ fontWeight: 'bold', background: '#f0f0f0', width: 150 }}
-        />
-        <input
-          placeholder="DC No"
-          value={newIssue.dcNo}
-          readOnly
-          style={{ fontWeight: 'bold', background: '#f0f0f0', width: 120 }}
-        />
-        <input
-          placeholder="Issue No"
-          value={newIssue.issueNo}
-          disabled
-          style={{ background: '#eee' }}
-        />
+        <input type="date" placeholder="Date" value={newIssue.date} onChange={e => setNewIssue({ ...newIssue, date: e.target.value })} />
+        <input placeholder="Material Purchase PO No" value={newIssue.materialPurchasePoNo} onChange={e => setNewIssue({ ...newIssue, materialPurchasePoNo: e.target.value })} />
+        <input placeholder="Vendor Name" value={newIssue.vendorName} readOnly style={{ fontWeight: 'bold', background: '#f0f0f0', width: 150 }} />
+        <input placeholder="OA No" value={newIssue.oaNo} readOnly style={{ fontWeight: 'bold', background: '#f0f0f0', width: 120 }} />
+        <input placeholder="Batch No" value={newIssue.batchNo} readOnly style={{ fontWeight: 'bold', background: '#f0f0f0', width: 120 }} />
+        <input placeholder="Vendor Batch No" value={newIssue.vendorBatchNo} readOnly style={{ fontWeight: 'bold', background: '#f0f0f0', width: 150 }} />
+        <input placeholder="DC No" value={newIssue.dcNo} readOnly style={{ fontWeight: 'bold', background: '#f0f0f0', width: 120 }} />
+        <input placeholder="Issue No" value={newIssue.issueNo} disabled style={{ background: '#eee' }} />
       </div>
       <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <label>Item Name:</label>
         {itemNames.length > 0 ? (
-          <select
-            name="itemName"
-            value={itemInput.itemName}
-            onChange={e => {
-              const value = e.target.value;
-              const found = itemMaster.find(item => item.itemName === value);
-              const foundCode = found ? found.itemCode : '';
-              // Find plannedQty from vendorDeptOrders for the selected PO and item
-              let plannedQty = 0;
-              if (newIssue.materialPurchasePoNo) {
-                const deptOrder = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
-                if (deptOrder && Array.isArray(deptOrder.items)) {
-                  const deptItem = deptOrder.items.find((it: any) => it.itemName === value && it.itemCode === foundCode);
-                  if (deptItem && typeof deptItem.plannedQty === 'number') {
-                    plannedQty = deptItem.plannedQty;
-                  }
-                }
+          <select name="itemName" value={itemInput.itemName} onChange={e => {
+            const value = e.target.value;
+            const found = itemMaster.find(item => item.itemName === value);
+            const foundCode = found ? found.itemCode : '';
+            let plannedQty = 0;
+            if (newIssue.materialPurchasePoNo) {
+              const deptOrder = vendorDeptOrders.find(order => order.materialPurchasePoNo === newIssue.materialPurchasePoNo);
+              if (deptOrder && Array.isArray(deptOrder.items)) {
+                const deptItem = deptOrder.items.find((it: any) => it.itemName === value && it.itemCode === foundCode);
+                if (deptItem && typeof deptItem.plannedQty === 'number') plannedQty = deptItem.plannedQty;
               }
-              setItemInput({ ...itemInput, itemName: value, itemCode: foundCode, qty: plannedQty });
-            }}
-          >
+            }
+            setItemInput({ ...itemInput, itemName: value, itemCode: foundCode, qty: plannedQty });
+          }}>
             <option value="">Select Item Name</option>
-            {itemNames.map(name => (
-              <option key={name} value={name}>{name}</option>
-            ))}
+            {itemNames.map(name => (<option key={name} value={name}>{name}</option>))}
           </select>
         ) : (
-          <input
-            type="text"
-            name="itemName"
-            value={itemInput.itemName}
-            onChange={handleChange}
-          />
+          <input type="text" name="itemName" value={itemInput.itemName} onChange={handleChange} />
         )}
-        <input
-          placeholder="Item Code"
-          name="itemCode"
-          value={itemInput.itemCode}
-          onChange={handleChange}
-          readOnly={itemNames.length > 0}
-        />
-        <input
-          type="number"
-          placeholder="Qty"
-          name="qty"
-          value={itemInput.qty}
-          onChange={handleChange}
-        />
-        <select
-          name="indentBy"
-          value={itemInput.indentBy}
-          onChange={handleChange}
-        >
+        <input placeholder="Item Code" name="itemCode" value={itemInput.itemCode} onChange={handleChange} readOnly={itemNames.length > 0} />
+        <input type="number" placeholder="Qty" name="qty" value={itemInput.qty} onChange={handleChange} />
+        <select name="indentBy" value={itemInput.indentBy} onChange={handleChange}>
           <option value="">Indent By</option>
-          {indentByOptions.map(opt => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
+          {indentByOptions.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
         </select>
-        <input
-          type="number"
-          placeholder="In Stock"
-          name="inStock"
-          value={itemInput.inStock}
-          onChange={handleChange}
-        />
+        <input type="number" placeholder="In Stock" name="inStock" value={itemInput.inStock} onChange={handleChange} />
         <label>
-          <input
-            type="checkbox"
-            checked={itemInput.indentClosed}
-            onChange={e => setItemInput({ ...itemInput, indentClosed: e.target.checked })}
-          />
+          <input type="checkbox" checked={itemInput.indentClosed} onChange={e => setItemInput({ ...itemInput, indentClosed: e.target.checked })} />
           Indent Closed
         </label>
         <button onClick={handleAddItem}>Add Item</button>
       </div>
       {newIssue.items.length > 0 && (
         <table border={1} cellPadding={6} style={{ width: '100%', marginBottom: 16 }}>
-          <thead>
-            <tr>
-              <th>Item Name</th>
-              <th>Item Code</th>
-              <th>Qty</th>
-              <th>Indent By</th>
-              <th>In Stock</th>
-              <th>Indent Closed</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Item Name</th><th>Item Code</th><th>Qty</th><th>Indent By</th><th>In Stock</th><th>Indent Closed</th></tr></thead>
           <tbody>
             {newIssue.items.map((item, idx) => (
-              <tr key={idx}>
-                <td>{item.itemName}</td>
-                <td>{item.itemCode}</td>
-                <td>{item.qty}</td>
-                <td>{item.indentBy}</td>
-                <td>{item.inStock}</td>
-                <td>{item.indentClosed ? 'Yes' : 'No'}</td>
-              </tr>
+              <tr key={idx}><td>{item.itemName}</td><td>{item.itemCode}</td><td>{item.qty}</td><td>{item.indentBy}</td><td>{item.inStock}</td><td>{item.indentClosed ? 'Yes' : 'No'}</td></tr>
             ))}
           </tbody>
         </table>
@@ -1145,95 +617,39 @@ const VendorIssueModule: React.FC = () => {
       <table border={1} cellPadding={6} style={{ width: '100%', marginBottom: 16 }}>
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Vendor Name</th>
-            <th>Material Purchase PO No</th>
-            <th>OA No</th>
-            <th>Batch No</th>
-            <th>Vendor Batch No</th>
-            <th>DC No</th>
-            <th>Issue No</th>
-            <th>Item Name</th>
-            <th>Item Code</th>
-            <th>Qty</th>
-            <th>Indent By</th>
-            <th>In Stock</th>
-            <th>Indent Closed</th>
-            <th>Edit</th>
-            <th>Delete</th>
+            <th>Date</th><th>Vendor Name</th><th>Material Purchase PO No</th><th>OA No</th>
+            <th>Batch No</th><th>Vendor Batch No</th><th>DC No</th><th>Issue No</th>
+            <th>Item Name</th><th>Item Code</th><th>Qty</th><th>Indent By</th>
+            <th>In Stock</th><th>Indent Closed</th><th>Edit</th><th>Delete</th>
           </tr>
         </thead>
         <tbody>
-          {issues.length === 0 && (
-            <tr><td colSpan={16} style={{ textAlign: 'center', color: '#888' }}>(No issues)</td></tr>
-          )}
+          {issues.length === 0 && (<tr><td colSpan={16} style={{ textAlign: 'center', color: '#888' }}>(No issues)</td></tr>)}
           {issues.flatMap((issue, idx) =>
             issue.items.map((item, i) => {
-              // Always show latest DC No from Vendor Dept if available
               const deptOrder = vendorDeptOrders.find(order => order.materialPurchasePoNo === issue.materialPurchasePoNo);
               const displayDcNo = deptOrder && deptOrder.dcNo && String(deptOrder.dcNo).trim() !== '' ? deptOrder.dcNo : issue.dcNo;
               return (
                 <tr key={`${idx}-${i}`}>
-                  <td>{issue.date}</td>
-                  <td>{issue.vendorName}</td>
-                  <td>{issue.materialPurchasePoNo}</td>
-                  <td>{issue.oaNo}</td>
-                  <td>{issue.batchNo}</td>
-                  <td>{issue.vendorBatchNo}</td>
-                  <td>{displayDcNo}</td>
-                  <td>{issue.issueNo}</td>
-                  <td>{item.itemName}</td>
-                  <td>{item.itemCode}</td>
-                  <td>{item.qty}</td>
-                  <td>{item.indentBy}</td>
-                  <td>{item.inStock}</td>
-                  <td>{item.indentClosed ? 'Yes' : 'No'}</td>
+                  <td>{issue.date}</td><td>{issue.vendorName}</td><td>{issue.materialPurchasePoNo}</td>
+                  <td>{issue.oaNo}</td><td>{issue.batchNo}</td><td>{issue.vendorBatchNo}</td>
+                  <td>{displayDcNo}</td><td>{issue.issueNo}</td><td>{item.itemName}</td>
+                  <td>{item.itemCode}</td><td>{item.qty}</td><td>{item.indentBy}</td>
+                  <td>{item.inStock}</td><td>{item.indentClosed ? 'Yes' : 'No'}</td>
+                  <td><button type="button" style={{ background: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 12px', cursor: 'pointer' }} onClick={() => handleEditIssue(idx)}>Edit</button></td>
                   <td>
-                    <button
-                      type="button"
-                      style={{ background: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 12px', cursor: 'pointer' }}
-                      onClick={() => handleEditIssue(idx)}
-                    >
-                      Edit
-                    </button>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const toDelete = issues[idx];
-                        if (!toDelete) {
-                          console.error('[VendorIssueModule] No issue found to delete at index', idx);
-                          return;
-                        }
-
-                        console.log('[VendorIssueModule] Deleting issue:', toDelete);
-                        
-                        // Delete from Firestore immediately
-                        if (userUid && toDelete?.id) {
-                          deleteVendorIssue(userUid, toDelete.id)
-                            .then(() => {
-                              console.log('[VendorIssueModule] Successfully deleted from Firestore:', toDelete.id);
-                              // Remove from local state after successful Firestore delete
-                              setIssues(prev => prev.filter((_, i) => i !== idx));
-                            })
-                            .catch((err) => {
-                              console.error('[VendorIssueModule] Failed to delete from Firestore:', err, 'Issue ID:', toDelete.id);
-                            });
-                        } else {
-                          // No userUid, just remove from state and localStorage
-                          setIssues(prev => {
-                            const updated = prev.filter((_, i) => i !== idx);
-                            try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {}
-                            return updated;
-                          });
-                        }
-                      }}
-                      style={{ background: '#e53935', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 12px', cursor: 'pointer' }}
-                    >
-                      Delete
-                    </button>
+                    <button type="button" onClick={(e) => {
+                      e.preventDefault();
+                      const toDelete = issues[idx];
+                      if (!toDelete) return;
+                      if (userUid && toDelete?.id) {
+                        deleteVendorIssue(userUid, toDelete.id)
+                          .then(() => setIssues(prev => prev.filter((_, i) => i !== idx)))
+                          .catch((err) => console.error('[VendorIssueModule] Failed to delete from Firestore:', err));
+                      } else {
+                        setIssues(prev => { const updated = prev.filter((_, i) => i !== idx); try { localStorage.setItem('vendorIssueData', JSON.stringify(updated)); } catch {} return updated; });
+                      }
+                    }} style={{ background: '#e53935', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 12px', cursor: 'pointer' }}>Delete</button>
                   </td>
                 </tr>
               );
