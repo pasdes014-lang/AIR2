@@ -35,7 +35,6 @@ const STOCK_MODULE_FIELDS = [
   { key: "vendorIssuedQty", label: "Vendor Issued Qty", type: "number" },
   { key: "closingStock", label: "Closing Stock", type: "number" }
 ];
-// NOTE: collection-based helpers (subscribe-backed) are implemented inside component
 
 const defaultItemInput: Omit<StockRecord, "id"> = {
   itemName: "",
@@ -57,8 +56,6 @@ const StockModule: React.FC = () => {
   const [records, setRecords] = useState<StockRecord[]>([]);
   const [userUid, setUserUid] = useState<string | null>(null);
   const [editIdx, setEditIdx] = useState<number | null>(null);
-  // item master from Firestore
-  // const [itemMaster, setItemMaster] = useState<{ itemName: string; itemCode: string }[]>([]);
   const [psirsState, setPsirsState] = useState<any[]>([]);
   const [vendorIssuesState, setVendorIssuesState] = useState<any[]>([]);
   const [inHouseIssuesState, setInHouseIssuesState] = useState<any[]>([]);
@@ -76,7 +73,6 @@ const StockModule: React.FC = () => {
   // Helper: normalization
   const normalize = (s: any) => (s === undefined || s === null ? '' : String(s).trim().toLowerCase());
 
-  // Firestore-backed helper functions (use state populated by subscriptions)
   const getVendorIssuedQtyTotal = (itemCode: string) => {
     try {
       return (vendorIssuesState || []).reduce((total: number, issue: any) => {
@@ -95,8 +91,6 @@ const StockModule: React.FC = () => {
       return 0;
     }
   };
-
-
 
   const getInHouseIssuedQtyByTransactionType = (itemCode: string, transactionType: string) => {
     try {
@@ -211,8 +205,6 @@ const StockModule: React.FC = () => {
     return Math.max(0, vendorDeptOkQty - totalInHouseIssuedVendor);
   };
 
-
-
   const getVendorDeptOkQtyTotal = (itemCode: string) => {
     try {
       return (vendorDeptState || []).reduce((total: number, order: any) => {
@@ -313,6 +305,22 @@ const StockModule: React.FC = () => {
     return Math.max(0, psirOkQty - totalInHouseIssuedPurchase - vendorIssuedQty);
   };
 
+  // ─── Closing Stock helper (single source of truth) ───────────────────────
+  const calcClosingStock = (
+    stockQty: number,
+    itemName: string,
+    itemCode: string,
+    batchNo?: string
+  ): number => {
+    return (
+      (Number(stockQty) || 0)
+      + (getAdjustedPurStoreOkQty(itemName, itemCode, batchNo) || 0)
+      + (getAdjustedVendorOkQty(itemCode) || 0)
+      - (getInHouseIssuedQtyByItemNameStockOnly(itemName, itemCode) || 0)
+      - (getAdjustedVendorIssuedQty(itemCode) || 0)   // ← vendor issued deduction
+    );
+  };
+
   // Listen for same-window PSIR updates via the event bus and force re-render
   useEffect(() => {
     const psirHandler = (ev: Event) => {
@@ -335,7 +343,7 @@ const StockModule: React.FC = () => {
     return () => { try { bus.removeEventListener('psir.updated', psirHandler as EventListener); } catch (err) {} };
   }, []);
 
-  // Load item master & track auth state; subscribe to Firestore collections when signed in
+  // Load item master & track auth state
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (u) => {
       const uid = u ? u.uid : null;
@@ -349,9 +357,7 @@ const StockModule: React.FC = () => {
     let unsub: (() => void) | null = null;
     if (userUid) {
       try {
-        // subscribe for realtime updates
         unsub = subscribeStockRecords(userUid, (docs: any[]) => {
-          // normalize docs into local record shape
           const mapped = docs.map(d => ({
             id: d.id,
             itemName: d.itemName || '',
@@ -373,11 +379,9 @@ const StockModule: React.FC = () => {
         console.error('[StockModule] subscribeStockRecords error:', err);
       }
     } else {
-      // signed out — clear records
       setRecords([]);
     }
 
-    // Also subscribe to dependent collections for calculations
     let unsubPsir: (() => void) | null = null;
     let unsubVendorIssues: (() => void) | null = null;
     let unsubVendorDepts: (() => void) | null = null;
@@ -387,23 +391,12 @@ const StockModule: React.FC = () => {
     let unsubIndent: (() => void) | null = null;
 
     if (userUid) {
-      try {
-        unsubPsir = subscribePsirs(userUid, (docs) => setPsirsState(docs));
-      } catch {}
-      try {
-        unsubVendorIssues = subscribeVendorIssues(userUid, (docs) => setVendorIssuesState(docs));
-      } catch {}
-      try {
-        unsubVendorDepts = subscribeVendorDepts(userUid, (docs) => setVendorDeptState(docs));
-      } catch {}
-      try {
-        unsubPurchaseOrders = subscribePurchaseOrders(userUid, (docs) => setPurchaseOrdersState(docs));
-      } catch {}
-      try {
-        unsubVSIR = subscribeVSIRRecords(userUid, (docs) => setVsirRecordsState(docs));
-      } catch {}
+      try { unsubPsir = subscribePsirs(userUid, (docs) => setPsirsState(docs)); } catch {}
+      try { unsubVendorIssues = subscribeVendorIssues(userUid, (docs) => setVendorIssuesState(docs)); } catch {}
+      try { unsubVendorDepts = subscribeVendorDepts(userUid, (docs) => setVendorDeptState(docs)); } catch {}
+      try { unsubPurchaseOrders = subscribePurchaseOrders(userUid, (docs) => setPurchaseOrdersState(docs)); } catch {}
+      try { unsubVSIR = subscribeVSIRRecords(userUid, (docs) => setVsirRecordsState(docs)); } catch {}
 
-      // inHouseIssueData, indentData and itemMasterData don't have helpers — subscribe directly
       try {
         const coll = collection(db, 'users', userUid, 'inHouseIssues');
         unsubInHouse = onSnapshot(coll, snap => setInHouseIssuesState(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
@@ -412,9 +405,9 @@ const StockModule: React.FC = () => {
         const coll2 = collection(db, 'users', userUid, 'indentData');
         unsubIndent = onSnapshot(coll2, snap => setIndentState(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
       } catch {}
+
       console.log('[StockModule] Auth effect: userUid set to', userUid);
-      
-      // load one-time master collections (same pattern as VSIR)
+
       (async () => {
         try {
           const items = await getItemMaster(userUid);
@@ -426,7 +419,6 @@ const StockModule: React.FC = () => {
         }
       })();
     } else {
-      // clear dependent states when signed out
       setPsirsState([]);
       setVendorIssuesState([]);
       setInHouseIssuesState([]);
@@ -449,7 +441,6 @@ const StockModule: React.FC = () => {
     };
   }, [userUid]);
 
-  // Debug: Log indentState changes
   useEffect(() => {
     console.log('[StockModule] indentState updated:', indentState.length, 'indents');
     if (indentState.length > 0) {
@@ -457,7 +448,6 @@ const StockModule: React.FC = () => {
     }
   }, [indentState]);
 
-  // Update debug panel when item input changes
   useEffect(() => {
     if (itemInput.itemName || itemInput.itemCode) {
       const psirOkQty = getPSIROkQtyTotal(itemInput.itemName, itemInput.itemCode) || 0;
@@ -472,20 +462,19 @@ const StockModule: React.FC = () => {
       setDebugInfo({
         itemName: itemInput.itemName,
         itemCode: itemInput.itemCode,
-        psirOkQty: psirOkQty,
-        totalInHouseIssuedPurchase: totalInHouseIssuedPurchase,
-        vendorIssuedQty: vendorIssuedQty,
-        purStoreOkQty: purStoreOkQty,
-        vendorDeptOkQty: vendorDeptOkQty,
-        totalInHouseIssuedVendor: totalInHouseIssuedVendor,
-        vendorOkQty: vendorOkQty
+        psirOkQty,
+        totalInHouseIssuedPurchase,
+        vendorIssuedQty,
+        purStoreOkQty,
+        vendorDeptOkQty,
+        totalInHouseIssuedVendor,
+        vendorOkQty
       });
     } else {
       setDebugInfo(null);
     }
   }, [itemInput.itemName, itemInput.itemCode, draftPsirItems]);
 
-  // Persist records (no localStorage) — notify other modules
   useEffect(() => {
     try {
       bus.dispatchEvent(new CustomEvent('stock.updated', { detail: { records } }));
@@ -494,12 +483,9 @@ const StockModule: React.FC = () => {
     }
   }, [records]);
 
-  // (PSIR helpers implemented above using subscribed state)
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     if (name === "itemName") {
-      // value is the itemCode (used as key in dropdown)
       const found = itemMasterState.find((item) => item.itemCode === value);
       console.log('[StockModule] item selected by code:', value, 'found item:', found);
       setItemInput((prev) => ({
@@ -521,41 +507,36 @@ const StockModule: React.FC = () => {
       alert("Item Name is required.");
       return;
     }
-    // Auto-calculate all fields except itemName/itemCode/stockQty/batchNo
+
     const vendorIssuedTotal = getVendorIssuedQtyTotal(itemInput.itemCode) || 0;
     const vendorDeptTotal = getVendorDeptQtyTotal(itemInput.itemCode) || 0;
     const vsirReceivedTotal = getVSIRReceivedQtyTotal(itemInput.itemCode) || 0;
-    // Subtract VSIR received quantities from vendor issued qty
     const vendorIssuedQtyAdjusted = Math.max(0, vendorIssuedTotal - vsirReceivedTotal);
-    // Get adjusted Pur Store OK Qty (subtract in-house issued qty by batch no)
     const purStoreOkQtyAdjusted = getAdjustedPurStoreOkQty(itemInput.itemName, itemInput.itemCode, itemInput.batchNo) || 0;
     const inHouseIssuedStockOnly = getInHouseIssuedQtyByItemNameStockOnly(itemInput.itemName, itemInput.itemCode) || 0;
+
     const autoRecord = {
       ...itemInput,
       indentQty: getIndentQtyTotal(itemInput.itemCode) || 0,
       purchaseQty: getPurchaseQtyTotal(itemInput.itemCode) || 0,
-      vendorQty: Math.max(0, vendorDeptTotal - vendorIssuedTotal), // Deduct issued qty from vendor dept qty
+      vendorQty: Math.max(0, vendorDeptTotal - vendorIssuedTotal),
       purStoreOkQty: purStoreOkQtyAdjusted,
       vendorOkQty: getAdjustedVendorOkQty(itemInput.itemCode) || 0,
       inHouseIssuedQty: getInHouseIssuedQtyByItemName(itemInput.itemName, itemInput.itemCode) || 0,
       vendorIssuedQty: vendorIssuedQtyAdjusted,
+      // ── FIXED: vendor issued qty now reduces closing stock ──
       closingStock:
         (Number(itemInput.stockQty) || 0)
-        + (purStoreOkQtyAdjusted)
+        + purStoreOkQtyAdjusted
         + (getAdjustedVendorOkQty(itemInput.itemCode) || 0)
-        - (inHouseIssuedStockOnly),
+        - inHouseIssuedStockOnly
+        - vendorIssuedQtyAdjusted,
     };
 
     console.log('[DEBUG] handleSubmit - Full Payload:', {
-      itemInput: itemInput,
-      calculations: {
-        vendorIssuedTotal,
-        vendorDeptTotal,
-        vsirReceivedTotal,
-        vendorIssuedQtyAdjusted,
-        purStoreOkQtyAdjusted
-      },
-      autoRecord: autoRecord
+      itemInput,
+      calculations: { vendorIssuedTotal, vendorDeptTotal, vsirReceivedTotal, vendorIssuedQtyAdjusted, purStoreOkQtyAdjusted },
+      autoRecord
     });
 
     if (editIdx !== null) {
@@ -570,7 +551,6 @@ const StockModule: React.FC = () => {
           console.error('[StockModule] Failed to update stock record in Firestore:', err);
         }
       } else {
-        // local update
         setRecords((prev) =>
           prev.map((rec, idx) => (idx === editIdx ? { ...autoRecord, id: rec.id } : rec))
         );
@@ -583,14 +563,10 @@ const StockModule: React.FC = () => {
           setRecords((prev) => [...prev, { ...autoRecord, id: newId } as any]);
         } catch (err) {
           console.error('[StockModule] Failed to add stock record to Firestore:', err);
-          // fallback to local
           setRecords((prev) => [...prev, { ...autoRecord, id: Date.now() }]);
         }
       } else {
-        setRecords((prev) => [
-          ...prev,
-          { ...autoRecord, id: Date.now() },
-        ]);
+        setRecords((prev) => [...prev, { ...autoRecord, id: Date.now() }]);
       }
     }
     setItemInput(defaultItemInput);
@@ -606,13 +582,11 @@ const StockModule: React.FC = () => {
     if (userUid && rec && typeof (rec as any).id === 'string') {
       try {
         await deleteStockRecord(userUid, String((rec as any).id));
-        // Don't update local state — let Firestore subscription auto-update
       } catch (err) {
         console.error('[StockModule] Failed to delete stock record from Firestore:', err);
         alert('Failed to delete record. Please try again.');
       }
     } else {
-      // Offline fallback: update local state only
       setRecords((prev) => prev.filter((_, i) => i !== idx));
     }
   };
@@ -700,12 +674,7 @@ const StockModule: React.FC = () => {
               <input
                 type="number"
                 name="closingStock"
-                value={
-                  (Number(itemInput.stockQty) || 0)
-                          + (getAdjustedPurStoreOkQty(itemInput.itemName, itemInput.itemCode, itemInput.batchNo) || 0)
-                  + (getAdjustedVendorOkQty(itemInput.itemCode) || 0)
-                  - (getInHouseIssuedQtyByItemNameStockOnly(itemInput.itemName, itemInput.itemCode) || 0)
-                }
+                value={calcClosingStock(itemInput.stockQty, itemInput.itemName, itemInput.itemCode, itemInput.batchNo)}
                 readOnly
                 style={{ width: "100%", padding: 6, borderRadius: 4, border: "1px solid #bbb", background: "#eee" }}
               />
@@ -741,17 +710,9 @@ const StockModule: React.FC = () => {
       <div style={{ marginBottom: 12, padding: 12, background: showDebugPanel ? '#e3f2fd' : '#f5f5f5', border: '2px solid #1976d2', borderRadius: 6 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <strong style={{ fontSize: '16px' }}>🐛 DEBUG PANEL - Pur Store OK Qty Calculation</strong>
-          <button 
+          <button
             onClick={() => setShowDebugPanel(!showDebugPanel)}
-            style={{
-              padding: '6px 12px',
-              background: '#1976d2',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
+            style={{ padding: '6px 12px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: '12px' }}
           >
             {showDebugPanel ? 'Hide' : 'Show'}
           </button>
@@ -769,19 +730,6 @@ const StockModule: React.FC = () => {
                   <strong style={{ display: 'block', marginBottom: 4, color: '#f57c00' }}>PSIR OK Qty Calculation:</strong>
                   <div style={{ marginLeft: 16 }}>
                     <div>Total PSIR OK Qty: <strong style={{ color: '#f57c00', fontSize: '16px' }}>{debugInfo.psirOkQty || 0}</strong></div>
-                    {debugInfo.psirItems && debugInfo.psirItems.length > 0 && (
-                      <details style={{ marginTop: 8 }}>
-                        <summary>Breakdown ({debugInfo.psirItems.length} items)</summary>
-                        <div style={{ marginLeft: 16, marginTop: 8 }}>
-                          {debugInfo.psirItems.map((item: any, idx: number) => (
-                            <div key={idx} style={{ padding: 6, background: '#ffe0b2', marginBottom: 4, borderRadius: 4, fontSize: '12px' }}>
-                              <div><strong>{item.itemName}</strong> [{item.itemCode}] {item.isDraft ? '(DRAFT)' : ''}</div>
-                              <div>okQty: {item.okQty}, qtyReceived: {item.qtyReceived} → Using: <strong>{item.usedValue}</strong></div>
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    )}
                   </div>
                 </div>
 
@@ -866,10 +814,8 @@ const StockModule: React.FC = () => {
                       : field.key === "vendorIssuedQty"
                       ? getAdjustedVendorIssuedQty(rec.itemCode)
                       : field.key === "closingStock"
-                      ? ((Number(rec.stockQty) || 0)
-                          + (getAdjustedPurStoreOkQty(rec.itemName, rec.itemCode, rec.batchNo) || 0)
-                          + (getAdjustedVendorOkQty(rec.itemCode) || 0)
-                          - (getInHouseIssuedQtyByItemNameStockOnly(rec.itemName, rec.itemCode) || 0))
+                      // ── FIXED: vendor issued qty now reduces closing stock in table too ──
+                      ? calcClosingStock(rec.stockQty, rec.itemName, rec.itemCode, rec.batchNo)
                       : (rec as any)[field.key]}
                   </td>
                 ))}
